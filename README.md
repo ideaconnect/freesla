@@ -160,10 +160,28 @@ The protocol client talks to an abstract link with `send` and `onMessage`. On
 the watch that is BLE; under test it is the mock vehicle. Identical client code
 runs on both.
 
+## Build
+
+```
+npm install
+npm install -g @zeppos/zeus-cli   # the Zepp toolchain, not an npm dependency
+zeus build                        # produces dist/*.zab
+zeus dev                          # live-reload into the Zepp simulator
+```
+
+The rendered artwork under `assets/` and the inlined images in
+`setting/assets.js` are generated but **committed**, so a clone builds without
+extra steps. Running `node tools/make-icons.js` is optional; it regenerates the
+Font Awesome artwork and leaves the IDCT mark alone, since that brand source is
+not part of this repository.
+
+Note that the Zepp simulator has no Bluetooth of any kind, so nothing past
+"connect" can be exercised there. That is what the mock vehicle is for.
+
 ## Testing
 
 ```
-npm test              # 72 tests
+npm test              # unit, protocol-vector and end-to-end suites
 node tools/verify.js  # narrated end-to-end run against the mock vehicle
 ```
 
@@ -281,3 +299,28 @@ seeding, not a small seed space in general.
   callbacks deliver a single object rather than positional arguments, and
   `mstBuildProfile` must follow `mstOnPrepare` with a short delay. Both come
   from Zepp's own library rather than their docs.
+
+## Licence
+
+Freesla's source is [BSD-3-Clause](LICENSE), copyright IDCT Bartosz Pachołek.
+
+Three things are deliberately **not** under that licence, and are set out in
+[ATTRIBUTION.md](ATTRIBUTION.md): the Freesla and IDCT brand marks, which are
+trademarks; the icon artwork, which stays CC BY 4.0 under Font Awesome's terms;
+and `@zeppos/zml`, which is Apache-2.0 and compiled into the built app.
+
+If you publish your own build, replace the brand marks.
+
+## Disclaimer
+
+Provided as is, with no warranty of any kind.
+
+**Freesla is not a safety device.** It commands powered closures that physically
+move. Do not use it where a moving panel could reach a person or an animal, and
+do not rely on it as your only means of getting into your car — carry your
+keycard.
+
+The app has never been tested against a real vehicle or on real watch hardware
+(see [Status](#status)). Enrolling a key is your decision and your risk.
+
+Not affiliated with, endorsed by, or sponsored by Tesla, Inc.

@@ -40,10 +40,10 @@ const OUT_BRAND = path.join(ROOT, 'assets/default.r/brand')
 //
 // The brand source lives outside the repository, so anyone else who runs this
 // will not have it. That is fine: the rendered marks are committed, and this
-// script leaves them untouched when the source is missing. Point
-// FREESLA_IDCT_LOGO at the SVG to regenerate them.
-const IDCT_LOGO = process.env.FREESLA_IDCT_LOGO ||
-  'C:/Users/ideac/Documents/IDCT/Branding/Logo/XLOGO.svg'
+// script leaves them untouched when the source is missing. To regenerate them:
+//
+//   FREESLA_IDCT_LOGO=/path/to/XLOGO.svg node tools/make-icons.js
+const IDCT_LOGO = process.env.FREESLA_IDCT_LOGO || ''
 const IDCT_LOGO_WIDTH = 190
 
 // The Freesla mark, supplied as light-on-transparent and dark-on-transparent.
