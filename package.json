@@ -1,0 +1,24 @@
+{
+  "name": "freesla",
+  "version": "1.0.0",
+  "description": "A Bluetooth key for Tesla vehicles, running on a Zepp OS watch.",
+  "type": "module",
+  "main": "app.js",
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "author": "IDCT (https://idct.tech)",
+  "license": "BSD-3-Clause",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ideaconnect/freesla"
+  },
+  "devDependencies": {
+    "@fortawesome/fontawesome-free": "^7.3.1",
+    "@resvg/resvg-js": "^2.6.2",
+    "@zeppos/device-types": "^3.0.0"
+  },
+  "dependencies": {
+    "@zeppos/zml": "^0.0.43"
+  }
+}

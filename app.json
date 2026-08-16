@@ -1,0 +1,58 @@
+{
+  "configVersion": "v3",
+  "app": {
+    "appId": 22020,
+    "appName": "Freesla",
+    "appType": "app",
+    "version": {
+      "code": 1,
+      "name": "1.0.0"
+    },
+    "icon": "icon.png",
+    "vender": "freesla",
+    "description": "Bluetooth key for Tesla vehicles. Not affiliated with Tesla, Inc."
+  },
+  "permissions": [
+    "device:os.ble",
+    "device:os.local_storage"
+  ],
+  "runtime": {
+    "apiVersion": {
+      "compatible": "4.0",
+      "target": "4.0",
+      "minVersion": "4.0"
+    }
+  },
+  "targets": {
+    "default": {
+      "module": {
+        "page": {
+          "pages": [
+            "page/index",
+            "page/controls",
+            "page/about",
+            "page/diagnostics"
+          ]
+        },
+        "app-side": {
+          "path": "app-side/index"
+        },
+        "setting": {
+          "path": "setting/index"
+        }
+      },
+      "platforms": [
+        {
+          "st": "r",
+          "dw": 480
+        }
+      ]
+    }
+  },
+  "i18n": {
+    "en-US": {
+      "appName": "Freesla"
+    }
+  },
+  "defaultLanguage": "en-US"
+}
