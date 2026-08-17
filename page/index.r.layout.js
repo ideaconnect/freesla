@@ -37,16 +37,18 @@ export const COLOR = {
 }
 
 export const TITLE = {
-  x: px(0), y: px(34), w: px(480), h: px(28),
-  text_size: px(23)
+  x: px(0), y: px(32), w: px(480), h: px(30),
+  text_size: px(25)
 }
 
 // Sized to the worst message the app can produce, not the shortest: three
-// wrapped lines at 20px. An overflowing status is what puts text on top of the
-// buttons underneath.
+// wrapped lines at 21px, which is what the longest of them needs. An
+// overflowing status is what puts text on top of the buttons underneath, so
+// the box grows with the type rather than the type being kept small to fit a
+// box.
 export const STATUS = {
-  x: px(64), y: px(68), w: px(352), h: px(84),
-  text_size: px(20)
+  x: px(62), y: px(66), w: px(356), h: px(88),
+  text_size: px(21)
 }
 
 // --- Setup ---------------------------------------------------------------
@@ -80,7 +82,7 @@ export const CONTROLS = {
 
 // One caption line under all three, on a shared baseline.
 export const CAPTIONS = {
-  y: px(332), h: px(26), text_size: px(20)
+  y: px(330), h: px(30), text_size: px(23)
 }
 
 // What the car last said about itself: locked, or something standing open.
@@ -93,8 +95,8 @@ export const CAPTIONS = {
 // on one line. This box does not wrap, so an underestimate here does not spill
 // onto a second line, it silently loses the end of the sentence.
 export const VEHICLE = {
-  x: px(62), y: px(368), w: px(356), h: px(28),
-  text_size: px(19)
+  x: px(56), y: px(366), w: px(368), h: px(30),
+  text_size: px(21)
 }
 
 // --- The mark ------------------------------------------------------------

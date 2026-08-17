@@ -22,7 +22,12 @@ const LAUNCH_SAMPLE = captureLaunchSample()
 
 App(BaseApp({
   globalData: {
-    launchSample: LAUNCH_SAMPLE
+    launchSample: LAUNCH_SAMPLE,
+    // The one controller, and with it the one Bluetooth link, shared by every
+    // screen. Filled in by lib/app/session.js the first time a page asks.
+    // Here rather than in a page because a page is the wrong lifetime for it:
+    // see the note at the top of that file.
+    controller: null
   },
 
   onCreate () {
@@ -31,5 +36,15 @@ App(BaseApp({
       ' r2=' + LAUNCH_SAMPLE.secondMantissa)
   },
 
-  onDestroy () {}
+  // The only place the car is hung up on.
+  //
+  // Closing the app deliberately is not a crash, so the breadcrumb goes with
+  // it; otherwise every ordinary exit mid-connection would be reported as one
+  // by the next launch, and that report suppresses the automatic reconnect.
+  onDestroy () {
+    const controller = (getApp().globalData || {}).controller
+    if (!controller) return
+    controller.forgetConnectStep()
+    controller.disconnect()
+  }
 }))

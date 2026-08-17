@@ -31,6 +31,7 @@ import { createStorage } from '../lib/zepp/storage.js'
 import { createBleTransport } from '../lib/zepp/ble-transport.js'
 import { createController, STATE } from '../lib/app/controller.js'
 import { createPhoneChannel, createSharedSecretDeriver } from '../lib/app/phone.js'
+import { sharedController } from '../lib/app/session.js'
 import { closureStateName, lockStateName } from '../lib/tesla/messages.js'
 import {
   CLOSURE_FIELD, CLOSURE_STATE, VEHICLE_LOCK_STATE, TRUST
@@ -38,6 +39,9 @@ import {
 
 const COLOR_TEXT = 0xffffff
 const COLOR_MUTED = 0x8a8a8a
+// One step up from muted, for the row captions. They are not chrome: once the
+// car has reported, they are the only place it says what each panel is doing.
+const COLOR_CAPTION = 0xb0b0b0
 const COLOR_WARN = 0xd29922
 const COLOR_ERROR = 0xe5534b
 const COLOR_OK = 0x3fb950
@@ -148,34 +152,39 @@ Page(BasePage({
     })
     this.state.phone = phone
 
-    const controller = createController({
+    // The same controller the main screen was using, link included. This screen
+    // used to build its own, which is why it opened reading "Tap to connect"
+    // over a car that had been connected a second earlier.
+    const controller = sharedController(getApp().globalData, () => createController({
       storage: createStorage(),
       createTransport: createBleTransport,
+      log: (message) => console.log('[freesla] ' + message)
+    }))
+
+    controller.attach({
       deriveSharedSecret: createSharedSecretDeriver(phone),
-      log: (message) => console.log('[freesla] ' + message),
       onChange: (state, detail) => this.showStatus(state, detail),
       onStatusChange: () => this.renderClosureState()
     })
     this.state.controller = controller
-    controller.begin()
 
     createWidget(widget.TEXT, {
       x: px(0), y: px(44), w: px(480), h: px(34),
-      color: COLOR_MUTED, text_size: px(24),
+      color: COLOR_MUTED, text_size: px(26),
       align_h: align.CENTER_H, align_v: align.CENTER_V,
       text_style: text_style.NONE, text: 'Controls'
     })
 
     createWidget(widget.TEXT, {
-      x: px(70), y: px(80), w: px(340), h: px(28),
-      color: COLOR_MUTED, text_size: px(17),
+      x: px(70), y: px(78), w: px(340), h: px(28),
+      color: COLOR_MUTED, text_size: px(20),
       align_h: align.CENTER_H, align_v: align.CENTER_V,
       text_style: text_style.NONE, text: 'Park the car first'
     })
 
     this.state.status = createWidget(widget.TEXT, {
-      x: px(70), y: px(108), w: px(340), h: px(36),
-      color: COLOR_TEXT, text_size: px(19),
+      x: px(66), y: px(108), w: px(348), h: px(36),
+      color: COLOR_TEXT, text_size: px(21),
       align_h: align.CENTER_H, align_v: align.CENTER_V,
       text_style: text_style.NONE, text: ''
     })
@@ -195,12 +204,21 @@ Page(BasePage({
 
     createWidget(widget.TEXT, {
       x: px(186), y: bottom + px(114), w: px(108), h: px(26),
-      color: COLOR_MUTED, text_size: px(20),
+      color: COLOR_MUTED, text_size: px(23),
       align_h: align.CENTER_H, align_v: align.CENTER_V,
       text_style: text_style.NONE, text: 'Back'
     })
 
     this.showStatus(controller.state, controller.detail)
+    this.renderClosureState()
+
+    // Connected only when there is nothing to reuse: this screen opened on a
+    // paired watch whose main screen never got as far as connecting, or the car
+    // went out of range in between. Last in build() rather than first, so the
+    // progress it reports has widgets to land on.
+    if (!controller.isLinked() && controller.state === STATE.DISCONNECTED) {
+      controller.connect()
+    }
   },
 
   addRow (control, index) {
@@ -224,15 +242,15 @@ Page(BasePage({
     })
 
     createWidget(widget.TEXT, {
-      x: LABEL_X, y: y + px(22), w: LABEL_W, h: px(34),
-      color: COLOR_TEXT, text_size: px(27),
+      x: LABEL_X, y: y + px(18), w: LABEL_W, h: px(36),
+      color: COLOR_TEXT, text_size: px(29),
       align_h: align.LEFT, align_v: align.CENTER_V,
       text_style: text_style.NONE, text: control.label
     })
 
     this.state.captions[control.name] = createWidget(widget.TEXT, {
-      x: LABEL_X, y: y + px(56), w: LABEL_W, h: px(46),
-      color: COLOR_MUTED, text_size: px(17),
+      x: LABEL_X, y: y + px(56), w: LABEL_W, h: px(58),
+      color: COLOR_CAPTION, text_size: px(20),
       align_h: align.LEFT, align_v: align.TOP,
       text_style: text_style.WRAP, text: control.caption
     })
@@ -276,7 +294,7 @@ Page(BasePage({
     this.state.armed = null
 
     for (const control of CONTROLS) {
-      if (control.name === armed) this.setCaption(armed, control.caption, COLOR_MUTED)
+      if (control.name === armed) this.setCaption(armed, control.caption, COLOR_CAPTION)
     }
   },
 
@@ -304,14 +322,14 @@ Page(BasePage({
       // dimmed and marked rather than presented as fact.
       const shut = state === CLOSURE_STATE.CLOSED
       const text = closureStateName(state) + (overheard ? ' (unverified)' : '')
-      this.setCaption(control.name, text, shut ? COLOR_MUTED : COLOR_WARN)
+      this.setCaption(control.name, text, shut ? COLOR_CAPTION : COLOR_WARN)
     }
 
     if (status.lockState !== undefined) {
       const locked = status.lockState === VEHICLE_LOCK_STATE.LOCKED
       this.setCaption('lock',
         lockStateName(status.lockState) + (overheard ? ' (unverified)' : ''),
-        locked ? COLOR_OK : COLOR_MUTED)
+        locked ? COLOR_OK : COLOR_CAPTION)
     }
   },
 
@@ -350,6 +368,8 @@ Page(BasePage({
     this.disarm()
     if (this.state.phone) this.state.phone.close()
     resetPageBrightTime()
-    if (this.state.controller) this.state.controller.disconnect()
+    // Detached, not disconnected. Going back to the main screen should not cost
+    // a reconnection any more than coming here should.
+    if (this.state.controller) this.state.controller.detach()
   }
 }))

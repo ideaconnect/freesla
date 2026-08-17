@@ -9,6 +9,7 @@ import { createBleTransport } from '../lib/zepp/ble-transport.js'
 import { createController, STATE } from '../lib/app/controller.js'
 import { normaliseVin } from '../lib/app/identity.js'
 import { createPhoneChannel, createSharedSecretDeriver } from '../lib/app/phone.js'
+import { sharedController } from '../lib/app/session.js'
 import { fromHex } from '../lib/util/hex.js'
 import { closureStateName, lockStateName } from '../lib/tesla/messages.js'
 import {
@@ -89,25 +90,31 @@ Page(BasePage({
       log: (message) => console.log('[freesla] ' + message)
     })
 
-    const controller = createController({
+    // Shared with the controls screen, and outliving both. Built here only the
+    // first time round; after that this picks up the live one, connection and
+    // all. See lib/app/session.js for why it is not per-page.
+    const controller = sharedController(getApp().globalData, () => createController({
       storage,
       createTransport: createBleTransport,
+      log: (message) => console.log('[freesla] ' + message)
+    }))
+
+    controller.attach({
       // The one-time ECDH per car. Sent to the phone for the same reason the
       // keypair is: the sum takes about 87 seconds here.
       deriveSharedSecret: createSharedSecretDeriver(phone),
-      log: (message) => console.log('[freesla] ' + message),
       onChange: () => this.render(),
       // Vehicle status arrives on its own from the car's broadcasts as well as
       // in reply to commands, so the driving screen can say what is open
       // without this watch ever asking.
       onStatusChange: () => this.renderVehicle()
     })
+
     this.state.storage = storage
     this.state.phone = phone
     this.state.controller = controller
 
     this.buildWidgets()
-    controller.begin()
     this.render()
 
     // If the previous run stopped part way through a connection, say where.
@@ -140,7 +147,11 @@ Page(BasePage({
     // never stays alive long enough to be told to stop. It also happens to
     // erase the only evidence of the fault, by painting over it. So the tap is
     // required, once, and the reason for it stays on the screen until then.
-    if (!lastStep &&
+    //
+    // Nor when the link is already up, which is the ordinary case on the way
+    // back from Controls: connect() would tear down a working connection to
+    // build the same one again.
+    if (!lastStep && !controller.isLinked() &&
         (controller.state === STATE.DISCONNECTED ||
          controller.state === STATE.NEEDS_ENROLMENT)) {
       controller.connect()
@@ -542,11 +553,9 @@ Page(BasePage({
     // otherwise arrive seconds later and paint into widgets that are gone.
     if (this.state.phone) this.state.phone.close()
     resetPageBrightTime()
-    if (this.state.controller) {
-      // Closing the app is not a crash. disconnect() drops the trail too, but
-      // this covers the case where there is no live connection to drop.
-      this.state.controller.forgetConnectStep()
-      this.state.controller.disconnect()
-    }
+    // Stops reporting here, and nothing more. The link outlives this screen on
+    // purpose: hanging up on the car because somebody opened Controls is what
+    // this used to do, and the car logged it every time.
+    if (this.state.controller) this.state.controller.detach()
   }
 }))
