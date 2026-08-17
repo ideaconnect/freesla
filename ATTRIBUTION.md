@@ -4,14 +4,14 @@ Freesla's own source is BSD-3-Clause (see [LICENSE](LICENSE)). Three things in
 this repository are **not** under that licence, and are set out below: the brand
 marks, the icon artwork, and one bundled dependency.
 
-## Brand marks — not licensed under BSD-3-Clause
+## Brand marks: not licensed under BSD-3-Clause
 
 The **Freesla logo** and the **IDCT mark** are trademarks and artwork of
 IDCT Bartosz Pachołek. They are not covered by the code licence. Specifically:
 
-- `assets/default.r/brand/` — `freesla.png`, `freesla-small.png`, `idct.png`
-- `assets/default.r/icon.png` — the app icon
-- `freesla-gfx/` — the Freesla source artwork
+- `assets/default.r/brand/`: `freesla.png`, `freesla-small.png`, `idct.png`
+- `assets/default.r/icon.png`: the app icon
+- `freesla-gfx/`: the Freesla source artwork
 - the `idctLogo` and `freeslaLogo` exports of `setting/assets.js`
 
 A fork may keep them to say where the code came from, but not use them as the
@@ -22,7 +22,7 @@ watch's dark interface and dark for the phone settings screen. The IDCT source
 SVG lives outside this repository, so the rendered files are committed and the
 generator leaves them alone when it cannot find the source.
 
-## Font Awesome Free — CC BY 4.0
+## Font Awesome Free: CC BY 4.0
 
 The control and interface artwork is generated from
 [Font Awesome Free](https://fontawesome.com) icons, licensed
@@ -46,7 +46,7 @@ Font Awesome has no Buy Me a Coffee mark, so `mug-hot` stands in for it on the
 support card. That card uses Buy Me a Coffee's brand yellow (`#FFDD00`); the
 name and marks belong to Buy Me a Coffee.
 
-## Zepp OS libraries — Apache-2.0
+## Zepp OS libraries: Apache-2.0
 
 [`@zeppos/zml`](https://www.npmjs.com/package/@zeppos/zml), copyright
 Zepp Health, licensed under the
