@@ -11,7 +11,7 @@ IDCT Bartosz Pachołek. They are not covered by the code licence. Specifically:
 
 - `assets/default.r/brand/`: `freesla.png`, `freesla-small.png`, `idct.png`
 - `assets/default.r/icon.png`: the app icon
-- `freesla-gfx/`: the Freesla source artwork
+- `freesla-gfx/`: the Freesla source artwork, and `freesla-gfx/export/`
 - the `idctLogo` and `freeslaLogo` exports of `setting/assets.js`
 
 A fork may keep them to say where the code came from, but not use them as the
@@ -22,29 +22,55 @@ watch's dark interface and dark for the phone settings screen. The IDCT source
 SVG lives outside this repository, so the rendered files are committed and the
 generator leaves them alone when it cannot find the source.
 
+`freesla-gfx/export/` holds the Freesla mark at sizes meant for use away from
+the watch: a README header, a store listing, a slide. Nothing in the app reads
+any of it. Regenerate with `npm run brand`. It is the same trademark artwork
+under the same terms as everything else in this section.
+
 ## Font Awesome Free: CC BY 4.0
 
-The control and interface artwork is generated from
+Most of the control and interface artwork is generated from
 [Font Awesome Free](https://fontawesome.com) icons, licensed
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), copyright
 Fonticons, Inc.
 
-- `assets/default.r/btn/` and `assets/default.r/icons/`
+- `assets/default.r/btn/` and `assets/default.r/icons/`, except the vehicle
+  glyphs listed in the next section
 - the `githubMark` and `coffeeMark` exports of `setting/assets.js`
 
 **These remain CC BY 4.0 and are not relicensed under BSD-3-Clause.** CC BY 4.0
 requires attribution on use, a condition BSD-3-Clause does not impose, so it
 cannot be sublicensed away. Keep this file with any redistribution.
 
-Icons used: `lock`, `lock-open`, `door-open`, `car-rear`, `car-side`,
-`arrow-up`, `arrow-down`, `bolt`, `hand`, `sliders`, `chevron-left`,
-`circle-info`, `mug-hot`, and the `github` brand mark. Each is recoloured and
-composited onto a circular background, with an arrow badge on open/close pairs;
-the glyph outlines are unmodified.
+Icons used: `lock`, `lock-open`, `door-open`, `arrow-up`, `arrow-down`, `bolt`,
+`hand`, `sliders`, `chevron-left`, `circle-info`, `mug-hot`, and the `github`
+brand mark. Each is recoloured and composited onto a circular background, with
+an arrow badge on open/close pairs; the glyph outlines are unmodified.
 
 Font Awesome has no Buy Me a Coffee mark, so `mug-hot` stands in for it on the
 support card. That card uses Buy Me a Coffee's brand yellow (`#FFDD00`); the
 name and marks belong to Buy Me a Coffee.
+
+## Vehicle glyphs: this project's own, BSD-3-Clause
+
+The boot, frunk and car glyphs are drawn in [`tools/glyphs.js`](tools/glyphs.js)
+and are part of this project's source, under the same BSD-3-Clause licence as
+the rest of it. They are original geometry, not traced from any other artwork.
+
+They exist because no free icon set has them. Font Awesome has no car with a
+panel standing open, so earlier builds used `car-rear` for the boot and
+`car-side` for the frunk with an arrow badge to tell them apart: side by side on
+the controls list, the difference between opening the boot and opening the
+bonnet was a 26px arrow pointing the same way on both.
+
+Sets that do have a dedicated boot icon were considered.
+[Atlas Icons](https://atlasicons.vectopus.com) is MIT and has one; it is thin
+line art, which among Font Awesome's solid glyphs reads as a mistake and, at the
+size these are drawn on a watch, loses most of its stroke to the scaler. Nothing
+from any of those sets is used here.
+
+There is still no door glyph of our own: a car in profile cannot show a door
+swinging towards the viewer. That row keeps Font Awesome's `door-open`.
 
 ## Zepp OS libraries: Apache-2.0
 

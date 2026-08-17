@@ -10,25 +10,35 @@ import { createController, STATE } from '../lib/app/controller.js'
 import { normaliseVin } from '../lib/app/identity.js'
 import { createPhoneChannel, createSharedSecretDeriver } from '../lib/app/phone.js'
 import { fromHex } from '../lib/util/hex.js'
+import { closureStateName, lockStateName } from '../lib/tesla/messages.js'
+import {
+  CLOSURE_FIELD, CLOSURE_STATE, VEHICLE_LOCK_STATE, TRUST
+} from '../lib/tesla/constants.js'
 
 const COLOR = Styles.COLOR
 
-// Which controls each state shows, and where the mark goes. Kept as data rather
-// than branching in the render, so the two cannot drift apart.
+// Which face the screen wears in each state, and where the mark goes. Kept as
+// data rather than branching in the render, so the two cannot drift apart.
+//
+// `mode` is the whole of it. 'setup' is a sentence and a button, because every
+// state before the car is paired has something to explain. 'driving' is what
+// replaces them once there is nothing left to say: three round buttons, Unlock
+// in the middle of the display, which is the only spot on a round watch a thumb
+// finds without looking.
 //
 // `logo` is 'large' while the car is still being set up, since those screens
 // are mostly empty and the mark gives them a centre, and 'small' once it is
 // paired, where it sits quietly under the controls.
 const LAYOUT = {}
-LAYOUT[STATE.NEEDS_VIN] = { primary: 'vin', secondary: null, small: false, logo: 'large' }
-LAYOUT[STATE.NEEDS_KEY] = { primary: 'create', secondary: null, small: false, logo: 'large' }
-LAYOUT[STATE.DISCONNECTED] = { primary: 'connect', secondary: null, small: false, logo: 'small' }
-LAYOUT[STATE.CONNECTING] = { primary: null, secondary: null, small: false, logo: 'small' }
-LAYOUT[STATE.NEEDS_ENROLMENT] = { primary: 'enrol', secondary: null, small: false, logo: 'large' }
-LAYOUT[STATE.ENROLLING] = { primary: 'check', secondary: null, small: false, logo: null }
-LAYOUT[STATE.READY] = { primary: 'unlock', secondary: 'lock', small: true, logo: 'small' }
-LAYOUT[STATE.BUSY] = { primary: 'unlock', secondary: 'lock', small: true, logo: 'small' }
-LAYOUT[STATE.ERROR] = { primary: 'retry', secondary: null, small: false, logo: 'small' }
+LAYOUT[STATE.NEEDS_VIN] = { mode: 'setup', primary: 'vin', logo: 'large' }
+LAYOUT[STATE.NEEDS_KEY] = { mode: 'setup', primary: 'create', logo: 'large' }
+LAYOUT[STATE.DISCONNECTED] = { mode: 'setup', primary: 'connect', logo: 'large' }
+LAYOUT[STATE.CONNECTING] = { mode: 'setup', primary: null, logo: 'large' }
+LAYOUT[STATE.NEEDS_ENROLMENT] = { mode: 'setup', primary: 'enrol', logo: 'large' }
+LAYOUT[STATE.ENROLLING] = { mode: 'setup', primary: 'check', logo: null }
+LAYOUT[STATE.READY] = { mode: 'driving', primary: null, logo: 'small' }
+LAYOUT[STATE.BUSY] = { mode: 'driving', primary: null, logo: 'small' }
+LAYOUT[STATE.ERROR] = { mode: 'setup', primary: 'retry', logo: 'large' }
 
 const BUTTONS = {
   vin: { text: 'Check phone', color: COLOR.ACCENT, press: COLOR.ACCENT_PRESS },
@@ -36,10 +46,23 @@ const BUTTONS = {
   connect: { text: 'Connect', color: COLOR.LOCK, press: COLOR.LOCK_PRESS },
   enrol: { text: 'Add to car', color: COLOR.ACCENT, press: COLOR.ACCENT_PRESS },
   check: { text: 'Done, check', color: COLOR.ACCENT, press: COLOR.ACCENT_PRESS },
-  retry: { text: 'Try again', color: COLOR.NEUTRAL, press: COLOR.NEUTRAL_PRESS },
-  unlock: { text: 'Unlock', color: COLOR.UNLOCK, press: COLOR.UNLOCK_PRESS },
-  lock: { text: 'Lock', color: COLOR.LOCK, press: COLOR.LOCK_PRESS }
+  retry: { text: 'Try again', color: COLOR.NEUTRAL, press: COLOR.NEUTRAL_PRESS }
 }
+
+// What the driving screen reports about the car, worst news first.
+//
+// A door standing open matters more than the lock state and contradicts it
+// anyway -- a car with the boot up is not locked, whatever it last said -- so
+// closures are read in this order and the first one that is not shut wins.
+const REPORTED = [
+  { field: CLOSURE_FIELD.REAR_TRUNK, label: 'Trunk' },
+  { field: CLOSURE_FIELD.FRONT_TRUNK, label: 'Frunk' },
+  { field: CLOSURE_FIELD.CHARGE_PORT, label: 'Charge port' },
+  { field: CLOSURE_FIELD.FRONT_DRIVER_DOOR, label: 'Door' },
+  { field: CLOSURE_FIELD.FRONT_PASSENGER_DOOR, label: 'Door' },
+  { field: CLOSURE_FIELD.REAR_DRIVER_DOOR, label: 'Door' },
+  { field: CLOSURE_FIELD.REAR_PASSENGER_DOOR, label: 'Door' }
+]
 
 Page(BasePage({
   state: {
@@ -73,7 +96,11 @@ Page(BasePage({
       // keypair is: the sum takes about 87 seconds here.
       deriveSharedSecret: createSharedSecretDeriver(phone),
       log: (message) => console.log('[freesla] ' + message),
-      onChange: () => this.render()
+      onChange: () => this.render(),
+      // Vehicle status arrives on its own from the car's broadcasts as well as
+      // in reply to commands, so the driving screen can say what is open
+      // without this watch ever asking.
+      onStatusChange: () => this.renderVehicle()
     })
     this.state.storage = storage
     this.state.phone = phone
@@ -238,17 +265,38 @@ Page(BasePage({
       click_func: () => this.onPrimary()
     })
 
-    w.secondary = createWidget(widget.BUTTON, {
-      x: Styles.SECONDARY.x,
-      y: Styles.SECONDARY.y,
-      w: Styles.SECONDARY.w,
-      h: Styles.SECONDARY.h,
-      radius: Styles.SECONDARY.radius,
-      text_size: Styles.SECONDARY.text_size,
-      normal_color: COLOR.LOCK,
-      press_color: COLOR.LOCK_PRESS,
-      text: 'Lock',
-      click_func: () => this.state.controller.lock()
+    // The driving screen's three, as artwork rather than coloured rectangles.
+    //
+    // Image buttons and not an icon laid over a coloured one: setting
+    // normal_color alongside normal_src makes the flat colour paint over the
+    // picture, and a separate widget on top of a button is a widget that might
+    // swallow the tap. The circle, its rim and its glyph are baked into one
+    // file by tools/make-icons.js.
+    w.unlock = this.imageButton('unlock-lg', Styles.UNLOCK,
+      () => this.state.controller.unlock())
+    w.lock = this.imageButton('lock-sm', Styles.LOCK,
+      () => this.state.controller.lock())
+    w.controls = this.imageButton('controls-sm', Styles.CONTROLS,
+      () => push({ url: 'page/controls' }))
+
+    // Captions below the buttons, never over them: text drawn on top of a
+    // button is text that has to be redrawn every time the button is pressed,
+    // and on this runtime it is also a second widget over the tap target.
+    w.capLock = this.caption(Styles.LOCK, 'Lock')
+    w.capUnlock = this.caption(Styles.UNLOCK, 'Unlock')
+    w.capControls = this.caption(Styles.CONTROLS, 'Controls')
+
+    w.vehicle = createWidget(widget.TEXT, {
+      x: Styles.VEHICLE.x,
+      y: Styles.VEHICLE.y,
+      w: Styles.VEHICLE.w,
+      h: Styles.VEHICLE.h,
+      color: COLOR.MUTED,
+      text_size: Styles.VEHICLE.text_size,
+      align_h: align.CENTER_H,
+      align_v: align.CENTER_V,
+      text_style: text_style.NONE,
+      text: ''
     })
 
     // Both sizes are created once and shown by state; recreating widgets on
@@ -268,18 +316,33 @@ Page(BasePage({
       h: Styles.LOGO_SMALL.h,
       src: 'brand/freesla-small.png'
     })
+  },
 
-    w.controls = createWidget(widget.BUTTON, {
-      x: Styles.CONTROLS.x,
-      y: Styles.CONTROLS.y,
-      w: Styles.CONTROLS.w,
-      h: Styles.CONTROLS.h,
-      radius: Styles.CONTROLS.radius,
-      text_size: Styles.CONTROLS.text_size,
-      normal_color: COLOR.NEUTRAL,
-      press_color: COLOR.NEUTRAL_PRESS,
-      text: 'Controls',
-      click_func: () => push({ url: 'page/controls' })
+  imageButton (art, box, onPress) {
+    return createWidget(widget.BUTTON, {
+      x: box.x,
+      y: box.y,
+      w: box.w,
+      h: box.h,
+      normal_src: 'btn/' + art + '_n.png',
+      press_src: 'btn/' + art + '_p.png',
+      click_func: onPress
+    })
+  },
+
+  // A label on the shared caption baseline, as wide as the button above it.
+  caption (box, text) {
+    return createWidget(widget.TEXT, {
+      x: box.x,
+      y: Styles.CAPTIONS.y,
+      w: box.w,
+      h: Styles.CAPTIONS.h,
+      color: COLOR.MUTED,
+      text_size: Styles.CAPTIONS.text_size,
+      align_h: align.CENTER_H,
+      align_v: align.CENTER_V,
+      text_style: text_style.NONE,
+      text
     })
   },
 
@@ -304,9 +367,6 @@ Page(BasePage({
         break
       case 'check':
         controller.checkEnrolment()
-        break
-      case 'unlock':
-        controller.unlock()
         break
     }
   },
@@ -372,29 +432,50 @@ Page(BasePage({
     // Everything below is decided by the layout alone, so when only the caption
     // has moved there is nothing below to redo.
     //
-    // This is not housekeeping. Connecting now reports each step it takes --
-    // several of them from inside Bluetooth callbacks -- and a full repaint is
-    // seven native setProperty calls. Doing all seven to change one line of
-    // text would mean the reporting of a stall on those callbacks had become a
-    // seven-fold increase in the work done on them.
+    // This is not housekeeping. Connecting reports each step it takes -- several
+    // of them from inside Bluetooth callbacks -- and a full repaint is a dozen
+    // native setProperty calls. Doing all twelve to change one line of text
+    // would mean the reporting of a stall on those callbacks had become a
+    // twelve-fold increase in the work done on them.
     //
     // Compared by plan rather than by state: LAYOUT entries are fixed objects,
     // and two states that share one -- READY and BUSY do, field for field --
     // have nothing to repaint between them either. Keying on the state name
-    // would repaint all seven properties on every command.
+    // would repaint the lot on every command.
     if (this.state.rendered === plan) return
 
     if (plan.primary) {
       const style = BUTTONS[plan.primary]
+      // Every property, not just the three that change.
+      //
+      // prop.MORE does not merge. Handed a partial set it takes the widget's
+      // whole property block from what it was given, and on a BUTTON the result
+      // is the one seen on the emulator: a button still sitting in the right
+      // place, still the colour it was created with, with no text on it at all.
+      // The status line above gets away with a partial set; this does not.
       w.primary.setProperty(prop.MORE, {
-        text: style.text,
+        x: Styles.PRIMARY.x,
+        y: Styles.PRIMARY.y,
+        w: Styles.PRIMARY.w,
+        h: Styles.PRIMARY.h,
+        radius: Styles.PRIMARY.radius,
+        text_size: Styles.PRIMARY.text_size,
+        color: COLOR.TEXT,
         normal_color: style.color,
-        press_color: style.press
+        press_color: style.press,
+        text: style.text
       })
     }
+
+    const driving = plan.mode === 'driving'
     w.primary.setProperty(prop.VISIBLE, !!plan.primary)
-    w.secondary.setProperty(prop.VISIBLE, !!plan.secondary)
-    w.controls.setProperty(prop.VISIBLE, plan.small)
+    w.unlock.setProperty(prop.VISIBLE, driving)
+    w.lock.setProperty(prop.VISIBLE, driving)
+    w.controls.setProperty(prop.VISIBLE, driving)
+    w.capUnlock.setProperty(prop.VISIBLE, driving)
+    w.capLock.setProperty(prop.VISIBLE, driving)
+    w.capControls.setProperty(prop.VISIBLE, driving)
+    w.vehicle.setProperty(prop.VISIBLE, driving)
     w.logoLarge.setProperty(prop.VISIBLE, plan.logo === 'large')
     w.logoSmall.setProperty(prop.VISIBLE, plan.logo === 'small')
 
@@ -402,6 +483,56 @@ Page(BasePage({
     // setProperty that threw would leave the cache claiming a layout that is
     // half painted, and every later render would agree there was nothing to do.
     this.state.rendered = plan
+
+    // The car may have reported while another face was on screen, so the line
+    // is filled in on arrival here rather than waiting for the next broadcast.
+    if (driving) this.renderVehicle()
+  },
+
+  // What the car last said about itself.
+  //
+  // Separate from render() because it changes on its own schedule: status
+  // arrives from the car's broadcasts, which have nothing to do with which
+  // button is on screen. Left blank until something has actually arrived --
+  // "Locked" printed from an assumption is worse than saying nothing, since the
+  // whole reason to show it is that the wearer cannot see the car.
+  renderVehicle () {
+    const controller = this.state.controller
+    const w = this.state.widgets
+    if (!w.vehicle) return
+    if (!this.state.rendered || this.state.rendered.mode !== 'driving') return
+
+    const status = controller.vehicleStatus
+    if (!status) return
+
+    // An overheard broadcast is unauthenticated, so it is marked rather than
+    // presented as a reading. Worded exactly as the controls screen words it.
+    const suffix = controller.statusTrust === TRUST.OVERHEARD ? ' (unverified)' : ''
+
+    for (const item of REPORTED) {
+      const state = controller.closureState(item.field)
+      if (state === undefined || state === CLOSURE_STATE.CLOSED) continue
+      w.vehicle.setProperty(prop.MORE, {
+        text: item.label + ' ' + closureStateName(state) + suffix,
+        color: COLOR.WARN
+      })
+      return
+    }
+
+    // Cleared rather than left alone when there is nothing to say. A boot that
+    // has just been shut would otherwise leave "Trunk open" on screen for as
+    // long as the app stayed open, which is the one reading nobody should be
+    // able to get wrong.
+    if (status.lockState === undefined) {
+      w.vehicle.setProperty(prop.MORE, { text: '', color: COLOR.MUTED })
+      return
+    }
+
+    const locked = status.lockState === VEHICLE_LOCK_STATE.LOCKED
+    w.vehicle.setProperty(prop.MORE, {
+      text: 'Car ' + lockStateName(status.lockState) + suffix,
+      color: locked ? COLOR.SUCCESS : COLOR.MUTED
+    })
   },
 
   onDestroy () {

@@ -64,15 +64,17 @@ Page({
       text: 'Randomness check',
       click_func: () => push({ url: 'page/diagnostics' })
     })
-    y += px(74)
+    y += px(80)
 
+    // The same round Back the controls list uses, so leaving a screen looks the
+    // same wherever you are.
     createWidget(widget.BUTTON, {
-      x: px(150), y, w: px(180), h: px(60),
-      radius: px(30), text_size: px(23),
-      normal_color: COLOR_NEUTRAL, press_color: COLOR_NEUTRAL_PRESS,
-      text: 'Back',
+      x: px(186), y, w: px(108), h: px(108),
+      normal_src: 'btn/back-sm_n.png',
+      press_src: 'btn/back-sm_p.png',
       click_func: () => push({ url: 'page/index' })
     })
+    this.line(y + px(114), 'Back', px(20), COLOR_MUTED, px(26))
   },
 
   // Single line of text. Returns the next free y, so the page composes top to

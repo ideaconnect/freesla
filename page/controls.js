@@ -42,12 +42,20 @@ const COLOR_WARN = 0xd29922
 const COLOR_ERROR = 0xe5534b
 const COLOR_OK = 0x3fb950
 
+const COLOR_RULE = 0x242424
+
 const ICON = 120
-const ICON_X = px(88)
-const LABEL_X = px(216)
-const LABEL_W = px(190)
+const ICON_X = px(74)
+const LABEL_X = px(206)
+const LABEL_W = px(206)
 const ROW_TOP = px(150)
 const ROW_PITCH = px(136)
+// A hairline between rows, inset to the width the round display actually keeps
+// at the middle of the screen. Not decoration: the rows are icon-then-text and
+// a caption that wraps to two lines otherwise sits closer to the next row's
+// icon than to its own.
+const RULE_X = px(74)
+const RULE_W = px(338)
 const CONFIRM_WINDOW_MS = 5000
 
 // Ordered by how confident we are that a given car will actually obey, and by
@@ -174,13 +182,22 @@ Page(BasePage({
 
     CONTROLS.forEach((control, index) => this.addRow(control, index))
 
-    const bottom = ROW_TOP + ROW_PITCH * CONTROLS.length + px(10)
+    // Back as a round icon with its name under it, the same shape and the same
+    // caption position the main screen uses, so the two screens read as one app
+    // rather than as one that draws circles and one that draws pills.
+    const bottom = ROW_TOP + ROW_PITCH * CONTROLS.length + px(12)
     createWidget(widget.BUTTON, {
-      x: px(140), y: bottom, w: px(200), h: px(64),
-      radius: px(32), text_size: px(24),
-      normal_color: 0x2a2a2a, press_color: 0x454545,
-      text: 'Back',
+      x: px(186), y: bottom, w: px(108), h: px(108),
+      normal_src: 'btn/back-sm_n.png',
+      press_src: 'btn/back-sm_p.png',
       click_func: () => push({ url: 'page/index' })
+    })
+
+    createWidget(widget.TEXT, {
+      x: px(186), y: bottom + px(114), w: px(108), h: px(26),
+      color: COLOR_MUTED, text_size: px(20),
+      align_h: align.CENTER_H, align_v: align.CENTER_V,
+      text_style: text_style.NONE, text: 'Back'
     })
 
     this.showStatus(controller.state, controller.detail)
@@ -188,6 +205,13 @@ Page(BasePage({
 
   addRow (control, index) {
     const y = ROW_TOP + ROW_PITCH * index
+
+    if (index > 0) {
+      createWidget(widget.FILL_RECT, {
+        x: RULE_X, y: y - px(10), w: RULE_W, h: px(2),
+        radius: 0, color: COLOR_RULE
+      })
+    }
 
     // Image-only button. Setting normal_color alongside normal_src makes the
     // flat colour paint over the artwork.
@@ -200,14 +224,14 @@ Page(BasePage({
     })
 
     createWidget(widget.TEXT, {
-      x: LABEL_X, y: y + px(24), w: LABEL_W, h: px(34),
+      x: LABEL_X, y: y + px(22), w: LABEL_W, h: px(34),
       color: COLOR_TEXT, text_size: px(27),
       align_h: align.LEFT, align_v: align.CENTER_V,
       text_style: text_style.NONE, text: control.label
     })
 
     this.state.captions[control.name] = createWidget(widget.TEXT, {
-      x: LABEL_X, y: y + px(58), w: LABEL_W, h: px(44),
+      x: LABEL_X, y: y + px(56), w: LABEL_W, h: px(46),
       color: COLOR_MUTED, text_size: px(17),
       align_h: align.LEFT, align_v: align.TOP,
       text_style: text_style.WRAP, text: control.caption

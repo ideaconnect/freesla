@@ -7,6 +7,8 @@
   "scripts": {
     "test": "node --test \"test/*.test.js\"",
     "verify": "node tools/verify.js",
+    "icons": "node tools/make-icons.js",
+    "brand": "node tools/make-brand.js",
     "mock-car": "dotnet run --project mock-car --",
     "verify:mock-car": "dotnet build mock-car -v q --nologo && node tools/verify-mock-car.js"
   },
