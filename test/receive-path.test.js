@@ -236,7 +236,7 @@ test('vehicle status decodes both nesting levels correctly', async () => {
   const ctx = setup()
 
   // closureStatuses is field 1 of a VehicleStatus that is itself field 1, so the
-  // frame opens 0a..0a.. — unwrapping one level would read lock state as a door.
+  // frame opens 0a..0a.., so unwrapping one level would read lock state as a door.
   const closures = {}
   closures[CLOSURE_FIELD.FRONT_PASSENGER_DOOR] = CLOSURE_STATE.AJAR
   closures[CLOSURE_FIELD.FRONT_TRUNK] = CLOSURE_STATE.OPENING

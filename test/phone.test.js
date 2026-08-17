@@ -3,7 +3,7 @@
 // Three pages used to carry their own copy of this, and they had already
 // drifted: different deadlines, different handling of the case where `request`
 // throws instead of rejecting, and none of them cancelling anything when the
-// page went away. That last one is the dangerous default — a deadline that
+// page went away. That last one is the dangerous default: a deadline that
 // fires after onDestroy paints into freed widgets, which on Zepp OS takes the
 // app down.
 

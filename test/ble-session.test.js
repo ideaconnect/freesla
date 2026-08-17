@@ -76,7 +76,7 @@ test('every stack call it makes is announced before it is made', async () => {
   // The reason this is worth asserting rather than trusting: a watchdog reset
   // destroys the screen, the log and the app's memory at once, so the last
   // step reported is the only surviving evidence of where it happened. If two
-  // stack calls share one caption, that evidence cannot tell them apart — and
+  // stack calls share one caption, that evidence cannot tell them apart, and
   // "Connecting" once covered the scan, the connection, three separate calls
   // to declare and discover the profile, and the descriptor write.
   const radio = createFakeRadio()

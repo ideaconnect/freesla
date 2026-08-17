@@ -116,7 +116,7 @@ function run () {
   return delay(60)
     .then(() => {
       if (vehicle.isEnrolled(publicKey)) {
-        fail('key was enrolled without an NFC tap — that would be a security hole')
+        fail('key was enrolled without an NFC tap, which would be a security hole')
         process.exitCode = 1
         return
       }

@@ -13,13 +13,11 @@ import { fromHex } from '../lib/util/hex.js'
 
 const COLOR = Styles.COLOR
 
-// Which control set each state shows. Keeping this as data rather than
-// branching in the render keeps the two in step as states are added.
 // Which controls each state shows, and where the mark goes. Kept as data rather
 // than branching in the render, so the two cannot drift apart.
 //
-// `logo` is 'large' while the car is still being set up — those screens are
-// mostly empty and the mark gives them a centre — and 'small' once it is
+// `logo` is 'large' while the car is still being set up, since those screens
+// are mostly empty and the mark gives them a centre, and 'small' once it is
 // paired, where it sits quietly under the controls.
 const LAYOUT = {}
 LAYOUT[STATE.NEEDS_VIN] = { primary: 'vin', secondary: null, small: false, logo: 'large' }
@@ -37,7 +35,7 @@ const BUTTONS = {
   create: { text: 'Create key', color: COLOR.ACCENT, press: COLOR.ACCENT_PRESS },
   connect: { text: 'Connect', color: COLOR.LOCK, press: COLOR.LOCK_PRESS },
   enrol: { text: 'Add to car', color: COLOR.ACCENT, press: COLOR.ACCENT_PRESS },
-  check: { text: 'Done — check', color: COLOR.ACCENT, press: COLOR.ACCENT_PRESS },
+  check: { text: 'Done, check', color: COLOR.ACCENT, press: COLOR.ACCENT_PRESS },
   retry: { text: 'Try again', color: COLOR.NEUTRAL, press: COLOR.NEUTRAL_PRESS },
   unlock: { text: 'Unlock', color: COLOR.UNLOCK, press: COLOR.UNLOCK_PRESS },
   lock: { text: 'Lock', color: COLOR.LOCK, press: COLOR.LOCK_PRESS }

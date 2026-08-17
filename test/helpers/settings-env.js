@@ -2,7 +2,7 @@
 // globals, so setting/index.js can be rendered under Node.
 //
 // The globals are installed as a side effect of importing this module, and
-// ES modules evaluate in source order — so a test imports this first and
+// ES modules evaluate in source order, so a test imports this first and
 // setting/index.js second, and the page finds its globals already in place.
 // That avoids a dynamic import, which the Zepp bundler cannot compile: it walks
 // the whole project including test/, targeting ES2015, where top-level await is

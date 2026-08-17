@@ -127,7 +127,7 @@ function main () {
   process.stdout.write('\r' + ' '.repeat(60) + '\r')
 
   if (hit !== null) {
-    console.log('\x1b[31mHIT\x1b[0m — the generator is seeded from the clock.')
+    console.log('\x1b[31mHIT\x1b[0m: the generator is seeded from the clock.')
     console.log('')
     console.log('  seed          ' + hit + ' microseconds')
     console.log('  which is      ' + new Date(Number(hit / 1000n)).toISOString())

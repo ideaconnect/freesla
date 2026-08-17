@@ -3,7 +3,7 @@
 // This exists for a fault that destroys its own evidence: the watchdog resets
 // the device, so the screen, the console and the application's memory all go at
 // once. The only account of the last moment is whatever had already been
-// written to storage — which makes *when* it is written and cleared the whole
+// written to storage, which makes *when* it is written and cleared the whole
 // of whether it can be believed.
 //
 // Two ways to get it wrong, and both would mislead rather than merely fail: a

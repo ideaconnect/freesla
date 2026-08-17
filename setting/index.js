@@ -138,12 +138,12 @@ AppSettingsPage({
       card([
         step(1, 'Enter your VIN above.'),
         step(2, 'Open Freesla on your watch. It picks the VIN up from this phone ' +
-          'by itself — tap Check phone if it does not appear.'),
+          'by itself. Tap Check phone if it does not appear.'),
         step(3, 'Tap Create key. It takes a few seconds.'),
         step(4, 'Stand next to the car and tap Add to car, then hold an existing ' +
           'key card against the centre console when the car asks.'),
         tip('info', 'Then you are done',
-          'The watch works on its own after this — locking and unlocking never ' +
+          'The watch works on its own after this. Locking and unlocking never ' +
           'involve your phone. You can leave it at home.')
       ]),
 
@@ -154,7 +154,7 @@ AppSettingsPage({
           value: storage.getItem('autoUnlock') === 'true',
           onChange: (value) => storage.setItem('autoUnlock', value ? 'true' : 'false')
         }),
-        body('With Freesla open on your watch, the car unlocks as you walk up — ' +
+        body('With Freesla open on your watch, the car unlocks as you walk up, ' +
           'no button press. It unlocks once per approach and re-arms after the ' +
           'car goes out of range.'),
         tip('warn', 'The app has to be on screen',
@@ -169,12 +169,12 @@ AppSettingsPage({
         entropyFooter(storage, entropy, readString(storage, 'entropyCheckedAt')),
         body('Your watch has no secure random number generator, and the maths ' +
           'takes it about ninety seconds. So the key is created on this phone ' +
-          'and sent to the watch. This happens once, while you tap Create key — ' +
+          'and sent to the watch. This happens once, while you tap Create key. ' +
           'never again afterwards.'),
         tip('info', 'Why this matters',
           'The public half of your key is broadcast in the clear every time the ' +
           'watch talks to the car. If the key were guessable, someone could work ' +
-          'it out without ever touching your car — so the app refuses to make ' +
+          'it out without ever touching your car, so the app refuses to make ' +
           'one it cannot make properly. There is no way to override that.'),
         tip('warn', 'The key crosses once',
           'Your key travels from this phone to the watch a single time, during ' +
@@ -262,7 +262,7 @@ function entropyRow (source) {
       ? 'This phone can create a secure key'
       // Not "checking": nothing is in progress. The companion service simply
       // has not reported, which usually means it has not started yet.
-      : 'Not checked yet — open Freesla on your watch once'
+      : 'Not checked yet, open Freesla on your watch once'
 
   return View({
     style: {
@@ -341,7 +341,7 @@ function supportCard () {
         display: 'block', textAlign: 'center'
       },
       paragraph: true
-    }, 'Freesla is free and open source — if you like it, please support the development.'),
+    }, 'Freesla is free and open source. If you like it, please support the development.'),
 
     // Styled as Buy Me a Coffee's own button: their yellow, dark text, rounded.
     //
@@ -419,7 +419,7 @@ function readString (storage, key) {
 // VINs never contain I, O or Q, so those are always a misread 1 or 0.
 function describeVin (vin) {
   if (!vin) return 'Required. The watch cannot find your car without it.'
-  if (/[IOQ]/.test(vin)) return 'A VIN never contains I, O or Q — check for 1 and 0.'
+  if (/[IOQ]/.test(vin)) return 'A VIN never contains I, O or Q. Check for 1 and 0.'
   if (vin.length !== 17) return 'A VIN is 17 characters; this one has ' + vin.length + '.'
   return 'Looks right. Continue on the watch.'
 }

@@ -97,7 +97,7 @@ function reportEntropyCapability (service) {
   const source = probe ? probe.source : 'none'
 
   service.log('secure randomness ' +
-    (probe ? 'AVAILABLE via ' + source : 'NOT AVAILABLE — key creation will be refused'))
+    (probe ? 'AVAILABLE via ' + source : 'NOT AVAILABLE, key creation will be refused'))
 
   settings.settingsStorage.setItem('entropySource', JSON.stringify(source))
   // A timestamp so the screen can show when this was last established, rather

@@ -67,16 +67,16 @@ function call (fn) {
 
 async function expectOk (label, fn) {
   const { err } = await call(fn)
-  if (err) bad(label + ' — ' + err.message)
+  if (err) bad(label + ': ' + err.message)
   else ok(label)
   return !err
 }
 
 async function expectFailure (label, fn, match) {
   const { err } = await call(fn)
-  if (!err) bad(label + ' — it succeeded, and should not have')
-  else if (match && !err.message.toLowerCase().includes(match)) bad(label + ' — failed with the wrong reason: ' + err.message)
-  else ok(label + ' — ' + err.message)
+  if (!err) bad(label + ': it succeeded, and should not have')
+  else if (match && !err.message.toLowerCase().includes(match)) bad(label + ': failed with the wrong reason: ' + err.message)
+  else ok(label + ': ' + err.message)
 }
 
 function findExecutable () {
@@ -182,7 +182,7 @@ function connectLink () {
 }
 
 async function run () {
-  heading('Freesla — the watch client against the C# mock car')
+  heading('Freesla: the watch client against the C# mock car')
   step('VIN                  ' + VIN)
   step('Advertised BLE name  ' + vehicleLocalName(VIN))
   // This run is over a socket, where the name decides nothing -- but a build

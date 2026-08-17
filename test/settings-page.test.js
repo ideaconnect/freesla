@@ -66,7 +66,7 @@ test('the VIN field is present and writes back normalised', () => {
 
 test('Link is only ever given a plain string', () => {
   // Passing components as Link children blanks the whole page, and nothing in
-  // the framework complains — it just renders nothing.
+  // the framework complains, it just renders nothing.
   const tree = render({})
   const links = collect(tree, (n) => n.type === 'Link')
   assert.ok(links.length >= 2, 'expected the idct and github links')

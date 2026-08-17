@@ -62,7 +62,7 @@ public sealed class BleLink : ILink
         _cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
 
         var adapter = await BluetoothAdapter.GetDefaultAsync();
-        if (adapter is null) throw new InvalidOperationException("no Bluetooth adapter — is Bluetooth switched on?");
+        if (adapter is null) throw new InvalidOperationException("no Bluetooth adapter; is Bluetooth switched on?");
         if (!adapter.IsPeripheralRoleSupported)
             throw new InvalidOperationException(
                 "this Bluetooth adapter cannot act as a peripheral, so it cannot pretend to be a car. " +
@@ -111,7 +111,7 @@ public sealed class BleLink : ILink
                 await DisposeAsync();
                 throw new InvalidOperationException(
                     $"the stack would not advertise the vehicle service ({status}). " +
-                    "Something still holds it — usually a previous run that did not exit cleanly. " +
+                    "Something still holds it, usually a previous run that did not exit cleanly. " +
                     "Wait a few seconds and try again, or switch Bluetooth off and on.");
             }
         }
@@ -261,7 +261,7 @@ public sealed class BleLink : ILink
                     return;
                 }
                 Note?.Invoke($"an LE device connected to this machine: {described}" +
-                             " — if that is the watch, it is now building its GATT profile");
+                             ". If that is the watch, it is now building its GATT profile");
             };
 
             watcher.EnumerationCompleted += (_, _) =>
@@ -325,7 +325,7 @@ public sealed class BleLink : ILink
             Note?.Invoke($"a key subscribed ({client.Session.DeviceId.Id}), " +
                          $"notifications up to {client.MaxNotificationSize} bytes" +
                          (Trace.Enabled(Verbosity.Verbose)
-                             ? " — it should now send a handshake; anything else means it did not get that far"
+                             ? ". It should now send a handshake; anything else means it did not get that far"
                              : ""));
     }
 

@@ -168,7 +168,7 @@ public sealed class VirtualVehicle
 
         if (Messages.LooksLikeVcsecEnvelope(bytes))
         {
-            Log2(Verbosity.Verbose, "rx", "it is an unsigned VCSEC envelope — an enrolment request");
+            Log2(Verbosity.Verbose, "rx", "it is an unsigned VCSEC envelope: an enrolment request");
             HandleEnrolment(bytes);
             return;
         }
@@ -329,7 +329,7 @@ public sealed class VirtualVehicle
 
         if (!signature.Epoch.AsSpan().SequenceEqual(_epoch))
         {
-            Log?.Invoke("reject", "wrong epoch — the car has rebooted since this session opened");
+            Log?.Invoke("reject", "wrong epoch; the car has rebooted since this session opened");
             RespondWithFault(message, Fault.IncorrectEpoch, sessionKey);
             return;
         }
@@ -406,7 +406,7 @@ public sealed class VirtualVehicle
                     // silently.
                     if (AnythingOpen())
                     {
-                        Log?.Invoke("cmd", "LOCK refused — something is still open");
+                        Log?.Invoke("cmd", "LOCK refused; something is still open");
                         SendVcsecPayload(message, sessionKey, Messages.BuildNominalError(GenericError.ClosuresOpen));
                         return;
                     }
@@ -482,13 +482,13 @@ public sealed class VirtualVehicle
                 {
                     // Silently ignored on a car without the motor, which is
                     // exactly what a real one does.
-                    Log?.Invoke("cmd", "trunk close ignored — this car has no powered liftgate");
+                    Log?.Invoke("cmd", "trunk close ignored; this car has no powered liftgate");
                     return true;
                 }
                 if (field == ClosureField.FrontTrunk)
                 {
                     // No Tesla can close a frunk remotely.
-                    Log?.Invoke("cmd", "frunk close ignored — no Tesla can do that remotely");
+                    Log?.Invoke("cmd", "frunk close ignored; no Tesla can do that remotely");
                     return true;
                 }
                 Log?.Invoke("cmd", $"{ClosureField.Name(field)}: close");
@@ -731,7 +731,7 @@ public sealed class VirtualVehicle
         _whitelist[id] = new EnrolledKey(_pendingEnrolment.Role, _pendingEnrolment.FormFactor, DateTime.UtcNow);
         _pendingEnrolment = null;
 
-        Log?.Invoke("enrol", $"keycard tapped — key {id[..16]}… is now enrolled");
+        Log?.Invoke("enrol", $"keycard tapped: key {id[..16]}… is now enrolled");
         Emit(Messages.BuildCommandStatus(OperationStatus.Ok), "the enrolment approval");
         StateChanged?.Invoke();
         return true;

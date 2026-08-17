@@ -122,7 +122,7 @@ public static class Trace
             var now = Since.Elapsed;
             return (
                 now - _lastHeard,
-                _lastSent ?? "nothing at all — the key has not been sent anything since it subscribed",
+                _lastSent ?? "nothing at all; the key has not been sent anything since it subscribed",
                 now - _lastSentAt);
         }
     }
@@ -148,7 +148,7 @@ public static class Trace
             if (_lastSent is null)
             {
                 return $"the key {verb} after {silentFor:F3}s of silence, without ever being sent " +
-                       "anything — it did not get as far as saying hello";
+                       "anything; it did not get as far as saying hello";
             }
             return $"the key {verb} after {silentFor:F3}s of silence; the last thing sent was " +
                    $"{_lastSent} ({(now - _lastSentAt).TotalSeconds:F3}s ago)";

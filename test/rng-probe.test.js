@@ -1,5 +1,5 @@
-// The probe's job is to catch a catastrophic condition — a generator that
-// restarts from the same seed every launch — so its detection logic is tested
+// The probe's job is to catch a catastrophic condition, a generator that
+// restarts from the same seed every launch, so its detection logic is tested
 // against simulated generators of known behaviour.
 
 import { test } from 'node:test'

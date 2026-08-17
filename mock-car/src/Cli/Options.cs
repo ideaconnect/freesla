@@ -158,7 +158,7 @@ public sealed class Options
     }
 
     public const string Usage = """
-        teslamock — a computer pretending to be a Tesla, so a key can be tested without one.
+        teslamock: a computer pretending to be a Tesla, so a key can be tested without one.
 
         USAGE
           teslamock [run]     [options]     be a car (Bluetooth and/or TCP)
@@ -193,7 +193,7 @@ public sealed class Options
 
         THE NAME
           A Tesla is found by name, and Windows will not let a program choose the name
-          its own advertisements carry — so this machine advertises under its own name
+          its own advertisements carry, so this machine advertises under its own name
           whatever VIN it is pretending to have. Nothing here is broken by that: build
           the watch app with that name in freesla.config.js and it will look for this
           machine instead. `teslamock doctor` prints the exact line. The other way round

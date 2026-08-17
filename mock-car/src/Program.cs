@@ -1,4 +1,4 @@
-// teslamock — a computer pretending to be a Tesla.
+// teslamock: a computer pretending to be a Tesla.
 //
 // The Zepp simulator has no Bluetooth and a real car is not something to keep
 // borrowing, so this is the third option: a program that answers to the vehicle
@@ -201,7 +201,7 @@ public static class Program
             // there would point at a reply that was never involved.
             Ui.Line("silent", Trace.NothingSentYet
                 ? $"nothing from the key for {silentFor.TotalSeconds:F1}s (×{reported}). It subscribed " +
-                  "and then went quiet without being sent anything — whatever stopped it, " +
+                  "and then went quiet without being sent anything. Whatever stopped it, " +
                   "it was doing it to itself"
                 : $"nothing from the key for {silentFor.TotalSeconds:F1}s " +
                   $"(×{reported}). Last sent {sentAgo.TotalSeconds:F1}s ago: {lastSent}");
@@ -352,7 +352,7 @@ public static class Program
         // send its owner off to debug a protocol that is working.
         if (string.Equals(report.AdvertisedName, wanted, StringComparison.Ordinal))
         {
-            Ui.Line("ble", $"advertising as {report.AdvertisedName} — a key scanning for this VIN will find it");
+            Ui.Line("ble", $"advertising as {report.AdvertisedName}, so a key scanning for this VIN will find it");
             return;
         }
 
@@ -379,7 +379,7 @@ public static class Program
 
         if (!report.HasAdapter)
         {
-            Ui.Verdict(false, "no Bluetooth adapter — switch Bluetooth on, or run with --no-ble --tcp");
+            Ui.Verdict(false, "no Bluetooth adapter. Switch Bluetooth on, or run with --no-ble --tcp");
             return 1;
         }
 
@@ -392,7 +392,7 @@ public static class Program
         Ui.Field("advertises as", report.AdvertisedName + (report.AdvertisedNameIsOverride ? " (registry override)" : " (this machine's name)"));
         Console.WriteLine();
         Ui.Verdict(report.LowEnergySupported, "Bluetooth Low Energy");
-        Ui.Verdict(report.PeripheralRoleSupported, "peripheral role — this is the one that decides whether a computer can be a car");
+        Ui.Verdict(report.PeripheralRoleSupported, "peripheral role: the one that decides whether a computer can be a car");
         Ui.Verdict(report.CentralRoleSupported, "central role");
         Ui.Verdict(report.ExtendedAdvertisingSupported, $"extended advertising (payload up to {report.MaxAdvertisementDataLength} bytes)");
 
@@ -489,7 +489,7 @@ public static class Program
 
                   Why --set is not simply a flag on the mock: Windows refuses to let a program put
                   a name in its own advertisements. The name a scanner sees belongs to the
-                  Bluetooth radio, and the radio's name lives in a registry key owned by SYSTEM —
+                  Bluetooth radio, and the radio's name lives in a registry key owned by SYSTEM.
                   an Administrator prompt is not enough on its own. --set therefore runs the write
                   through a one-shot scheduled task as SYSTEM, so it needs an elevated prompt, and
                   then power-cycles the radio so the driver picks the new name up.
@@ -524,7 +524,7 @@ public static class Program
         var written = string.Equals(after.AdvertisedName, target, StringComparison.Ordinal);
         Ui.Verdict(written, written
             ? $"the radio's name is now \"{target}\" in the registry"
-            : $"the registry still says \"{after.AdvertisedName}\" — the write did not take");
+            : $"the registry still says \"{after.AdvertisedName}\", so the write did not take");
         if (!written)
         {
             Console.WriteLine();
@@ -639,7 +639,7 @@ internal static class Ui
     public static void Header(VirtualVehicle vehicle, Options options)
     {
         Console.WriteLine();
-        Write(ConsoleColor.White, "  teslamock — pretending to be a Tesla\n");
+        Write(ConsoleColor.White, "  teslamock: pretending to be a Tesla\n");
         Console.WriteLine("  ──────────────────────────────────────────────────────────────");
         Field("VIN", vehicle.Vin);
         // Labelled by where it comes from, not as "the" name: what a scanner
