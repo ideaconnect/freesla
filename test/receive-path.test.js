@@ -11,6 +11,8 @@ import assert from 'node:assert'
 import crypto from 'node:crypto'
 
 import { createClient } from '../lib/tesla/client.js'
+import { buildSessionInfo, parseRoutableMessage } from '../lib/tesla/messages.js'
+import { localSharedSecret } from '../lib/tesla/session.js'
 import { createMockVehicle } from '../tools/mock-vehicle.js'
 import { derivePublicKey, generatePrivateKey } from '../lib/crypto/p256.js'
 import {
@@ -37,8 +39,9 @@ function setup () {
   let clientHandler = null
   let muted = false
 
+  const sent = []
   const link = {
-    send (bytes) { if (!muted) vehicle.link.send(bytes) },
+    send (bytes) { sent.push(bytes); if (!muted) vehicle.link.send(bytes) },
     onMessage (cb) { clientHandler = cb }
   }
   vehicle.link.onMessage((bytes) => { if (clientHandler) clientHandler(bytes) })
@@ -50,6 +53,7 @@ function setup () {
     publicKey,
     link,
     randomBytes,
+    deriveSharedSecret: localSharedSecret,
     onStatus: (status, trust) => statuses.push({ status, trust })
   })
 
@@ -57,6 +61,7 @@ function setup () {
     vehicle,
     client,
     statuses,
+    sent,
     inject: (bytes) => clientHandler(bytes),
     mute: () => { muted = true }
   }
@@ -256,3 +261,53 @@ test('a genuine encrypted reply is trusted more than a broadcast', async () => {
     assert.notStrictEqual(seen.trust, TRUST.OVERHEARD)
   }
 })
+
+test('a session-info frame with no from-destination does not throw', async () => {
+  // The domain a frame belongs to has to be read before the shared-secret
+  // derivation can yield, because `pending` may be gone by the time the phone
+  // answers. Hoisting that read also hoisted it above authentication, where the
+  // field is whatever the sender chose -- and parseRoutableMessage yields null
+  // for an absent from_destination, which the response decoder a few lines down
+  // has always allowed for.
+  //
+  // On the watch the resulting TypeError is swallowed by the Bluetooth
+  // callback's catch, so a reply the car really did send vanishes and the
+  // command dies as a timeout with nothing in the log to explain it.
+  const { client, inject, sent, mute } = setup()
+
+  // A real session first, so the next request is a command rather than a
+  // handshake -- the handshake path takes its domain from the pending request.
+  await call((cb) => client.unlock(cb))
+
+  mute()
+  let settled = null
+  client.unlock((err) => { settled = err || 'ok' })
+
+  const outbound = parseRoutableMessage(sent[sent.length - 1])
+  const ours = outbound.fromDestination.routingAddress
+  assert.ok(ours, 'the command went out with no routing address')
+
+  // Session info carrying a well-formed public key, addressed to us, with the
+  // from_destination field simply absent.
+  const info = buildSessionInfo({
+    counter: 9,
+    publicKey: new Uint8Array(65).fill(4),
+    epoch: new Uint8Array(16),
+    clockTime: 100
+  })
+
+  const message = createWriter()
+  const dest = createWriter()
+  writeBytesField(dest, DESTINATION.ROUTING_ADDRESS, ours)
+  writeMessageField(message, ROUTABLE.TO_DESTINATION, dest)
+  writeBytesField(message, ROUTABLE.SESSION_INFO, info)
+
+  assert.doesNotThrow(() => inject(finishWriter(message)),
+    'a frame with no from_destination crashed the inbound handler')
+  await settled60()
+  assert.notStrictEqual(settled, 'ok', 'a forged frame settled the command')
+})
+
+function settled60 () {
+  return new Promise((resolve) => setTimeout(resolve, 60))
+}

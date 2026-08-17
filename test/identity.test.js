@@ -1,6 +1,14 @@
-// Key generation. The rule under test is absolute: without randomness from the
-// phone, no key is produced at all. There is no degraded mode, because the car
-// trusts a weak key exactly as much as a strong one.
+// The watch's key identity.
+//
+// The keypair is made on the phone and installed here; the watch does no
+// asymmetric maths of its own, for two independent reasons either of which
+// would be enough. Zepp OS has no cryptographically secure RNG, so a
+// watch-chosen key would be guessable against a public key that travels in the
+// clear over BLE. And deriving a public key is ~87 seconds on that
+// interpreter, with no native crypto anywhere on the platform to fall back on.
+//
+// What is left to test here is the gate: what this module agrees to keep, and
+// what it refuses.
 
 import { test } from 'node:test'
 import assert from 'node:assert'
@@ -8,66 +16,104 @@ import crypto from 'node:crypto'
 
 import { createIdentity, PROVENANCE_STRONG } from '../lib/app/identity.js'
 import { createSettingsStore, createMemoryBackend } from '../lib/app/settings-store.js'
-import { derivePublicKey, isValidPrivateKey } from '../lib/crypto/p256.js'
+import { derivePublicKey, generatePrivateKey, isValidPrivateKey } from '../lib/crypto/p256.js'
 import { toHex } from '../lib/util/hex.js'
 
 function store () {
   return createSettingsStore(createMemoryBackend())
 }
 
-// Stands in for the phone's crypto.getRandomValues.
-function phoneEntropy (fill) {
-  const bytes = new Uint8Array(48)
-  if (fill === undefined) return new Uint8Array(crypto.randomBytes(48))
-  bytes.fill(fill)
-  return bytes
+function randomBytes (n) {
+  return new Uint8Array(crypto.randomBytes(n))
 }
 
-test('generation is refused without randomness from the phone', () => {
-  assert.throws(() => createIdentity(store()).generate(null), /no strong randomness/)
-  assert.throws(() => createIdentity(store()).generate(undefined), /no strong randomness/)
-  assert.throws(() => createIdentity(store()).generate(new Uint8Array(0)), /no strong randomness/)
-  // Too little to be a real source.
-  assert.throws(() => createIdentity(store()).generate(new Uint8Array(8)), /no strong randomness/)
+// What the phone sends: a keypair from its own CSPRNG.
+function phoneKeyPair () {
+  const privateKey = generatePrivateKey(randomBytes)
+  return { privateKey, publicKey: derivePublicKey(privateKey) }
+}
+
+test('the watch does no curve arithmetic of its own', async () => {
+  // Guarded as source text because the cost is a property of the runtime, not
+  // of the result: every one of these returns the right answer under Node, in
+  // 14ms, which is exactly why no behavioural test would ever catch it. On the
+  // watch the same call is 87 seconds, and the one that used to be reachable
+  // ran inside a native Bluetooth callback, which reset the device.
+  const { readFileSync } = await import('node:fs')
+  const source = readFileSync(new URL('../lib/app/identity.js', import.meta.url), 'utf8')
+
+  const banned = ['derivePublicKey', 'generatePrivateKey', 'ecdh', 'scalarMult']
+  for (const name of banned) {
+    assert.ok(!new RegExp('\\b' + name + '\\s*\\(').test(source),
+      'identity.js calls ' + name + '(), which is 87 seconds on the watch')
+  }
 })
 
-test('there is no override that permits a weak key', () => {
-  const identity = createIdentity(store())
-  // Older builds accepted an options argument to force generation. Any such
-  // call must now still be refused, whatever is passed.
-  assert.throws(() => identity.generate(null, { allowWeak: true }), /no strong randomness/)
-  assert.throws(() => identity.generate(new Uint8Array(4), { allowWeak: true }), /no strong randomness/)
-})
-
-test('a refused generation leaves nothing behind', () => {
+test('a keypair from the phone is kept and marked as trusted', () => {
   const storage = store()
   const identity = createIdentity(storage)
+  const { privateKey, publicKey } = phoneKeyPair()
 
-  assert.throws(() => identity.generate(null))
-  assert.ok(!identity.hasKey(), 'a key was stored despite the refusal')
-  assert.ok(!identity.hasTrustedKey())
-  assert.strictEqual(storage.getPrivateKey(), null)
-  assert.strictEqual(storage.getKeyProvenance(), null)
-})
-
-test('phone randomness produces a valid, trusted key', () => {
-  const storage = store()
-  const identity = createIdentity(storage)
-  const result = identity.generate(phoneEntropy())
+  const result = identity.installKeyPair(privateKey, publicKey)
 
   assert.ok(isValidPrivateKey(result.privateKey))
   assert.strictEqual(result.publicKey.length, 65)
   assert.strictEqual(result.publicKey[0], 0x04)
-  assert.strictEqual(toHex(derivePublicKey(result.privateKey)), toHex(result.publicKey))
-
-  assert.ok(identity.hasTrustedKey(), 'a properly made key was not trusted')
+  assert.ok(identity.hasTrustedKey(), 'a properly supplied key was not trusted')
   assert.strictEqual(storage.getKeyProvenance(), PROVENANCE_STRONG)
+})
+
+test('an unusable private key is refused and nothing is stored', () => {
+  const { publicKey } = phoneKeyPair()
+
+  for (const [what, bad] of [
+    ['nothing at all', null],
+    ['the wrong length', new Uint8Array(16)],
+    ['zero', new Uint8Array(32)],
+    ['a scalar at or past the curve order', new Uint8Array(32).fill(0xff)]
+  ]) {
+    const storage = store()
+    const identity = createIdentity(storage)
+    assert.throws(() => identity.installKeyPair(bad, publicKey), /unusable private key/,
+      what + ' was accepted')
+    assert.strictEqual(storage.getPrivateKey(), null, what + ' reached storage')
+    assert.strictEqual(storage.getKeyProvenance(), null)
+  }
+})
+
+test('a public key that is not on the curve is refused', () => {
+  // Not pedantry: accepting an off-curve point is how an invalid-curve attack
+  // starts, and "the phone said so" is not a reason to store a car key.
+  const storage = store()
+  const identity = createIdentity(storage)
+  const { privateKey, publicKey } = phoneKeyPair()
+
+  const bent = new Uint8Array(publicKey)
+  bent[40] ^= 0xff
+
+  assert.throws(() => identity.installKeyPair(privateKey, bent), /not on the curve/)
+  assert.throws(() => identity.installKeyPair(privateKey, publicKey.subarray(0, 40)), /not on the curve/)
+  assert.strictEqual(storage.getPrivateKey(), null, 'a bad pair reached storage')
+})
+
+test('the halves are deliberately not checked against each other', () => {
+  // Confirming that they correspond means deriving the public key, which is the
+  // ninety seconds this whole arrangement exists to avoid. A mismatched pair is
+  // not a safety problem: the car simply never accepts it, visibly, at
+  // enrolment.
+  const identity = createIdentity(store())
+  const a = phoneKeyPair()
+  const b = phoneKeyPair()
+
+  assert.ok(identity.installKeyPair(a.privateKey, b.publicKey),
+    'a mismatched pair was rejected, which means something derived a key')
 })
 
 test('a key inherited from an older build is not trusted', () => {
   const storage = store()
   const identity = createIdentity(storage)
-  identity.generate(phoneEntropy())
+  const { privateKey, publicKey } = phoneKeyPair()
+  identity.installKeyPair(privateKey, publicKey)
 
   // Simulate a key stored before provenance was recorded.
   storage.setKeyProvenance('')
@@ -79,52 +125,41 @@ test('a key inherited from an older build is not trusted', () => {
 test('the key is persisted and reloads intact', () => {
   const storage = store()
   const identity = createIdentity(storage)
-  const generated = identity.generate(phoneEntropy())
+  const { privateKey, publicKey } = phoneKeyPair()
+  identity.installKeyPair(privateKey, publicKey)
 
   const loaded = identity.load()
-  assert.strictEqual(toHex(loaded.privateKey), toHex(generated.privateKey))
-  assert.strictEqual(toHex(loaded.publicKey), toHex(generated.publicKey))
+  assert.strictEqual(toHex(loaded.privateKey), toHex(privateKey))
+  assert.strictEqual(toHex(loaded.publicKey), toHex(publicKey))
 })
 
-test('generating a key marks it as not yet enrolled', () => {
+test('installing a key marks it as not yet enrolled', () => {
   const storage = store()
   storage.setEnrolled(true)
 
-  createIdentity(storage).generate(phoneEntropy())
+  const { privateKey, publicKey } = phoneKeyPair()
+  createIdentity(storage).installKeyPair(privateKey, publicKey)
   assert.ok(!storage.isEnrolled(), 'a fresh key was treated as already enrolled')
 })
 
-test('different phone entropy yields different keys', () => {
-  const a = createIdentity(store()).generate(phoneEntropy(0x11))
-  const b = createIdentity(store()).generate(phoneEntropy(0x22))
-  assert.notStrictEqual(toHex(a.privateKey), toHex(b.privateKey))
-})
-
-test('watch entropy is mixed in, so identical phone bytes still differ', () => {
-  // A phone replaying the same bytes must not pin the key down by itself.
-  const fixed = phoneEntropy(0x5a)
-  const first = createIdentity(store()).generate(fixed)
-  const second = createIdentity(store()).generate(fixed)
-
-  assert.notStrictEqual(toHex(first.privateKey), toHex(second.privateKey),
-    'the key depended only on the phone')
-})
-
-test('scan observations are folded in and bounded', () => {
+test('scan observations are collected and bounded', () => {
+  // No longer key material -- the key comes from the phone -- but the watch
+  // still draws routing addresses and request uuids locally, and an unbounded
+  // buffer on a watch heap is its own problem.
   const identity = createIdentity(store())
-  for (let i = 0; i < 5; i++) identity.observe(new Uint8Array(crypto.randomBytes(8)))
-  assert.strictEqual(identity.generate(phoneEntropy()).observationCount, 5)
+  for (let i = 0; i < 5; i++) identity.observe(randomBytes(8))
+  assert.strictEqual(identity.entropySources().length, 5)
 
   const flooded = createIdentity(store())
   for (let i = 0; i < 500; i++) flooded.observe(new Uint8Array([i & 0xff]))
-  assert.ok(flooded.generate(phoneEntropy()).observationCount <= 64,
-    'observation buffer grew without limit')
+  assert.ok(flooded.entropySources().length <= 64, 'observation buffer grew without limit')
 })
 
 test('a corrupt stored key reads as absent rather than being used', () => {
   const storage = store()
   const identity = createIdentity(storage)
-  identity.generate(phoneEntropy())
+  const { privateKey, publicKey } = phoneKeyPair()
+  identity.installKeyPair(privateKey, publicKey)
 
   storage.setKeyPair(new Uint8Array(32), new Uint8Array(65))
   assert.ok(!identity.hasKey(), 'an out-of-range private key was accepted')

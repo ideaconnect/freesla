@@ -10,10 +10,12 @@
 import crypto from 'node:crypto'
 
 import { createClient } from '../lib/tesla/client.js'
+import { localSharedSecret } from '../lib/tesla/session.js'
 import { createMockVehicle } from './mock-vehicle.js'
 import { createSimulatedBleLink } from './ble-link.js'
 import { derivePublicKey, generatePrivateKey } from '../lib/crypto/p256.js'
 import { vehicleLocalName } from '../lib/tesla/messages.js'
+import { localNameOverride } from '../lib/app/device-name.js'
 import { DOMAIN, ROLE, KEY_FORM_FACTOR } from '../lib/tesla/constants.js'
 
 const VIN = process.argv[2] || '5YJ30123456789ABC'
@@ -56,11 +58,23 @@ function call (fn) {
   })
 }
 
+// Said loudly, because it is invisible everywhere else. A build carrying an
+// override scans for that name and nothing else, so it cannot find a real car
+// -- and on the watch that is indistinguishable from a car out of range.
+function warnAboutNameOverride () {
+  const override = localNameOverride()
+  if (!override) return
+  console.log('  \x1b[33m!\x1b[0m This build scans for  ' + override +
+    '  (BLE_NAME_OVERRIDE in freesla.config.js)')
+  console.log('    It will not find a real car. Empty that setting before building for one.')
+}
+
 function run () {
   heading('Freesla protocol verification')
   step('VIN                  ' + VIN)
   step('Advertised BLE name  ' + vehicleLocalName(VIN))
   step('GATT service         00000211-b2d1-43f0-9b88-960cebf8b91e')
+  warnAboutNameOverride()
 
   heading('1. Generating the watch key')
   const started = Date.now()
@@ -92,7 +106,7 @@ function run () {
     }
   })
 
-  const client = createClient({ vin: VIN, privateKey, publicKey, link, randomBytes })
+  const client = createClient({ vin: VIN, privateKey, publicKey, link, randomBytes, deriveSharedSecret: localSharedSecret })
   step('MTU payload 20 bytes, messages fragmented and reassembled')
 
   heading('3. Enrolling the key')
@@ -157,6 +171,10 @@ function run () {
       }
       console.log('')
       ok('Protocol verified end to end against a vehicle using OpenSSL crypto.')
+      // Repeated deliberately. The same warning goes out at the top, where six
+      // headings of output then scroll it away -- and the whole point of it is
+      // to be the last thing read before somebody builds.
+      warnAboutNameOverride()
       console.log('')
     })
     .catch((err) => {

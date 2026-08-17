@@ -11,6 +11,7 @@ import assert from 'node:assert'
 import crypto from 'node:crypto'
 
 import { createClient } from '../lib/tesla/client.js'
+import { localSharedSecret } from '../lib/tesla/session.js'
 import { createMockVehicle } from '../tools/mock-vehicle.js'
 import { derivePublicKey, generatePrivateKey } from '../lib/crypto/p256.js'
 import {
@@ -35,7 +36,8 @@ function setup (options) {
     privateKey,
     publicKey,
     link: vehicle.link,
-    randomBytes
+    randomBytes,
+    deriveSharedSecret: localSharedSecret
   })
 
   if (!settings.skipEnrolment) vehicle.enrol(publicKey)
@@ -276,7 +278,8 @@ test('a tampered command is rejected by the vehicle', async () => {
     privateKey: generatePrivateKey(randomBytes),
     publicKey: derivePublicKey(generatePrivateKey(randomBytes)),
     link: tamperingLink,
-    randomBytes
+    randomBytes,
+    deriveSharedSecret: localSharedSecret
   })
 
   await assert.rejects(call((cb) => tamperedClient.unlock(cb)))
@@ -301,12 +304,12 @@ test('the session key survives a reconnect without redoing ecdh', async () => {
     set (id, value) { derivations++; store[id] = value }
   }
 
-  const first = createClient({ vin: VIN, privateKey, publicKey, link: vehicle.link, randomBytes, sessionKeyCache })
+  const first = createClient({ vin: VIN, privateKey, publicKey, link: vehicle.link, randomBytes, sessionKeyCache, deriveSharedSecret: localSharedSecret })
   await call((cb) => first.unlock(cb))
   assert.strictEqual(derivations, 1, 'expected one ecdh on first contact')
 
   // A fresh client stands in for the app being reopened.
-  const second = createClient({ vin: VIN, privateKey, publicKey, link: vehicle.link, randomBytes, sessionKeyCache })
+  const second = createClient({ vin: VIN, privateKey, publicKey, link: vehicle.link, randomBytes, sessionKeyCache, deriveSharedSecret: localSharedSecret })
   await call((cb) => second.unlock(cb))
 
   assert.strictEqual(derivations, 1, 'ecdh was recomputed despite a warm cache')

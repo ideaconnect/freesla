@@ -8,6 +8,7 @@ import { createStorage } from '../lib/zepp/storage.js'
 import { createBleTransport } from '../lib/zepp/ble-transport.js'
 import { createController, STATE } from '../lib/app/controller.js'
 import { normaliseVin } from '../lib/app/identity.js'
+import { createPhoneChannel, createSharedSecretDeriver } from '../lib/app/phone.js'
 import { fromHex } from '../lib/util/hex.js'
 
 const COLOR = Styles.COLOR
@@ -21,9 +22,8 @@ const COLOR = Styles.COLOR
 // mostly empty and the mark gives them a centre — and 'small' once it is
 // paired, where it sits quietly under the controls.
 const LAYOUT = {}
-LAYOUT[STATE.NEEDS_VIN] = { primary: null, secondary: null, small: false, logo: 'large' }
+LAYOUT[STATE.NEEDS_VIN] = { primary: 'vin', secondary: null, small: false, logo: 'large' }
 LAYOUT[STATE.NEEDS_KEY] = { primary: 'create', secondary: null, small: false, logo: 'large' }
-LAYOUT[STATE.GENERATING_KEY] = { primary: null, secondary: null, small: false, logo: null }
 LAYOUT[STATE.DISCONNECTED] = { primary: 'connect', secondary: null, small: false, logo: 'small' }
 LAYOUT[STATE.CONNECTING] = { primary: null, secondary: null, small: false, logo: 'small' }
 LAYOUT[STATE.NEEDS_ENROLMENT] = { primary: 'enrol', secondary: null, small: false, logo: 'large' }
@@ -33,6 +33,7 @@ LAYOUT[STATE.BUSY] = { primary: 'unlock', secondary: 'lock', small: true, logo: 
 LAYOUT[STATE.ERROR] = { primary: 'retry', secondary: null, small: false, logo: 'small' }
 
 const BUTTONS = {
+  vin: { text: 'Check phone', color: COLOR.ACCENT, press: COLOR.ACCENT_PRESS },
   create: { text: 'Create key', color: COLOR.ACCENT, press: COLOR.ACCENT_PRESS },
   connect: { text: 'Connect', color: COLOR.LOCK, press: COLOR.LOCK_PRESS },
   enrol: { text: 'Add to car', color: COLOR.ACCENT, press: COLOR.ACCENT_PRESS },
@@ -46,10 +47,12 @@ Page(BasePage({
   state: {
     controller: null,
     storage: null,
+    phone: null,
     widgets: {},
-    // Distinguishes "no phone in range" from "phone has no secure generator",
-    // which need different fixes from the owner.
-    entropyProblem: null
+    vinPoll: null,
+    destroyed: false,
+    // The state the buttons and logo were last laid out for; see render().
+    rendered: null
   },
 
   build () {
@@ -58,48 +61,122 @@ Page(BasePage({
     setPageBrightTime({ brightTime: 300000 })
 
     const storage = createStorage()
+    // Every request to the phone goes through here, so each one gets a deadline
+    // and none of them can answer after this page is destroyed.
+    const phone = createPhoneChannel({
+      request: (payload) => this.request(payload),
+      log: (message) => console.log('[freesla] ' + message)
+    })
+
     const controller = createController({
       storage,
       createTransport: createBleTransport,
+      // The one-time ECDH per car. Sent to the phone for the same reason the
+      // keypair is: the sum takes about 87 seconds here.
+      deriveSharedSecret: createSharedSecretDeriver(phone),
       log: (message) => console.log('[freesla] ' + message),
       onChange: () => this.render()
     })
     this.state.storage = storage
+    this.state.phone = phone
     this.state.controller = controller
 
     this.buildWidgets()
     controller.begin()
     this.render()
 
+    // If the previous run stopped part way through a connection, say where.
+    //
+    // Nothing else can: a watchdog reset takes the screen and the console with
+    // it, so the only account of the last moment is the one that was written
+    // down before it. Reported on screen as well as to the log, because the
+    // console is not always attached at the moment it matters -- and reported
+    // before anything below starts a fresh attempt over the top of it.
+    const lastStep = controller.lastConnectStep()
+    if (lastStep) {
+      console.log('[freesla] the previous run stopped at: ' + lastStep)
+      this.setStatus('Last run stopped at ' + lastStep + '. Tap to try again.', COLOR.ERROR)
+    }
+
+
     // The VIN may have been entered on the phone before this app was ever
-    // opened, so ask for it once. Failure is expected and harmless when no
+    // opened, so go and fetch it. Failure is expected and harmless when no
     // phone is nearby; the watch does not need one to operate.
-    if (controller.state === STATE.NEEDS_VIN) this.requestVin()
+    if (controller.state === STATE.NEEDS_VIN) this.pollForVin()
 
     // Connecting immediately means a configured watch is usually ready by the
-    // time the wearer reaches the car.
-    if (controller.state === STATE.DISCONNECTED) controller.connect()
-  },
-
-  requestVin () {
-    try {
-      this.request({ method: 'GET_VIN' })
-        .then((data) => {
-          if (data && data.vin) this.applyVin(data.vin)
-        })
-        .catch(() => {})
-    } catch (e) {
-      // No phone connected; the watch carries on with whatever it has stored.
+    // time the wearer reaches the car. Done for a key still waiting to be
+    // enrolled too: that screen's only action needs the car in range, and
+    // starting the scan now means it usually already is.
+    //
+    // Not after a run that stopped mid-connection, though. If connecting is
+    // what restarted the watch, then connecting again the moment it comes back
+    // up is a boot loop -- one the wearer cannot get out of, because the app
+    // never stays alive long enough to be told to stop. It also happens to
+    // erase the only evidence of the fault, by painting over it. So the tap is
+    // required, once, and the reason for it stays on the screen until then.
+    if (!lastStep &&
+        (controller.state === STATE.DISCONNECTED ||
+         controller.state === STATE.NEEDS_ENROLMENT)) {
+      controller.connect()
     }
   },
 
+  // Asks repeatedly rather than once.
+  //
+  // The single attempt this replaces had to win a race it usually lost: the
+  // companion service on the phone is not running until something wants it, and
+  // the link to the phone is still being established while this page is being
+  // built. One request into that gap is answered by nobody, and the watch then
+  // sat on "no VIN" for as long as the app stayed open, however long ago the
+  // owner had actually typed one in.
+  pollForVin () {
+    let attempt = 0
+
+    const ask = () => {
+      if (this.state.destroyed) return
+      if (this.state.controller.state !== STATE.NEEDS_VIN) return
+
+      attempt++
+      this.requestVin(false)
+
+      // Backs off rather than hammering the link, and stops well before it
+      // could be mistaken for activity: past this point the owner has the
+      // Check phone button, which says what it is doing.
+      if (attempt < 5) this.state.vinPoll = setTimeout(ask, attempt * 3000)
+    }
+
+    ask()
+  },
+
+  // `announce` reports progress and failure on screen. Off for the automatic
+  // polling, where no phone in range is the normal case and saying so would
+  // bury the instruction the wearer actually needs to read.
+  requestVin (announce) {
+    if (announce) this.setStatus('Asking your phone…', COLOR.TEXT)
+
+    this.state.phone.ask('GET_VIN', { timeoutMs: 12000 }, (err, data) => {
+      if (!err && data && data.vin && this.applyVin(data.vin)) return
+      if (announce) {
+        this.setStatus('No VIN from your phone yet. Enter it in Freesla’s ' +
+          'settings in the Zepp app, then tap Check phone.', COLOR.ERROR)
+      }
+    })
+  },
+
+  // Returns whether the watch now holds this VIN, so a manual check can tell a
+  // phone that answered with nothing usable from one that answered properly.
   applyVin (value) {
     const vin = normaliseVin(value)
-    if (!vin) return
-    if (vin === this.state.storage.getVin()) return
+    if (!vin) return false
+    if (vin === this.state.storage.getVin()) return true
 
     this.state.controller.setVin(vin)
-    if (this.state.controller.state === STATE.DISCONNECTED) this.state.controller.connect()
+    if (this.state.controller.state === STATE.DISCONNECTED ||
+        this.state.controller.state === STATE.NEEDS_ENROLMENT) {
+      this.state.controller.connect()
+    }
+    return true
   },
 
   // Pushed from the phone when the VIN changes in settings.
@@ -117,6 +194,9 @@ Page(BasePage({
   },
 
   buildWidgets () {
+    // New widgets carry none of the old ones' properties, so whatever the
+    // cache below believes is already painted, is not.
+    this.state.rendered = null
     const w = this.state.widgets
 
     // A button rather than a label so the diagnostics screen has a way in
@@ -211,6 +291,9 @@ Page(BasePage({
     if (!plan || !plan.primary) return
 
     switch (plan.primary) {
+      case 'vin':
+        this.requestVin(true)
+        break
       case 'create':
         this.createKey()
         break
@@ -230,56 +313,45 @@ Page(BasePage({
     }
   },
 
-  // Key generation is the one moment where randomness quality is decided for
-  // good, so the phone is asked for entropy first. The watch has no secure
-  // generator of its own, and the resulting key guards a car.
+  // The key is built on the phone and sent over.
+  //
+  // Both machines run the same curve code, but the phone finishes in about ten
+  // milliseconds and this watch takes some ninety seconds -- an interpreter
+  // gap, not an algorithmic one. Ninety seconds of setup that looks like a hang
+  // is not something to ask of anyone, so the work goes where it is quick.
+  //
+  // There is no watch-side fallback. Building a key here would need a secure
+  // generator this platform does not have and a scalar multiplication it cannot
+  // afford, and a key made without the first is worse than no key at all --
+  // the car trusts a guessable one exactly like a real one.
   createKey () {
-    const controller = this.state.controller
-    let done = false
+    this.setStatus('Asking your phone…', COLOR.TEXT)
 
-    const finish = (entropy) => {
-      if (done) return
-      done = true
-
-      // The scalar multiplication blocks the interpreter for a noticeable
-      // moment, so the progress text is painted and the work deferred a tick,
-      // or the screen would sit frozen on the previous frame.
-      if (!entropy) {
-        // Refused rather than degraded: without the phone there is no source of
-        // randomness on this watch worth building a car key from.
-        this.setStatus(this.state.entropyProblem === 'unavailable'
-          ? 'Your phone has no secure random source, so a safe key cannot be made.'
-          : 'Phone not connected. Open the Zepp app on your phone, then tap ' +
-            'Create key again.', COLOR.ERROR)
+    this.state.phone.ask('GET_KEYPAIR', {}, (err, data) => {
+      if (err) {
+        this.setStatus('Phone not connected. Open the Zepp app on your phone, ' +
+          'then tap Create key again.', COLOR.ERROR)
         return
       }
 
-      this.setStatus('Creating key…', COLOR.TEXT)
-      setTimeout(() => controller.generateKey(entropy), 60)
-    }
+      if (data && data.quality === 'strong' && data.privateHex && data.publicHex) {
+        this.setStatus('Creating key…', COLOR.TEXT)
+        this.state.controller.installKeyPair(fromHex(data.privateHex), fromHex(data.publicHex))
+        return
+      }
 
-    this.setStatus('Waiting for your phone…', COLOR.TEXT)
-    // Do not wait indefinitely: with no phone in range the request never
-    // settles, and setup would appear to hang. Generous, since this happens
-    // exactly once and a round trip goes over Bluetooth.
-    setTimeout(() => finish(null), 12000)
+      // The phone answered and cannot help. Reported through the controller so
+      // it survives the next render: written straight to the widget it would be
+      // wiped by any repaint the controller triggers afterwards.
+      const reason = data && data.quality === 'unavailable'
+        ? 'Your phone has no secure random source, so a safe key cannot be made.'
+        : 'Your phone could not create a key. Update the Zepp app on your ' +
+          'phone, then tap Create key again.'
 
-    try {
-      this.request({ method: 'GET_ENTROPY', bytes: 48 })
-        .then((data) => {
-          // Only a real generator counts. The phone falling back to
-          // Math.random would be no better than the watch doing so.
-          const strong = data && data.quality === 'strong' && data.hex
-          if (data && !strong) {
-            this.state.entropyProblem = data.quality
-            console.log('[freesla] phone entropy rejected: ' + data.quality + ' from ' + data.source)
-          }
-          finish(strong ? fromHex(data.hex) : null)
-        })
-        .catch(() => finish(null))
-    } catch (e) {
-      finish(null)
-    }
+      console.log('[freesla] phone could not make a keypair (' +
+        (data && data.quality) + ')')
+      this.state.controller.keyUnavailable(reason)
+    })
   },
 
   setStatus (message, color) {
@@ -299,6 +371,21 @@ Page(BasePage({
     else if (controller.state === STATE.READY) color = COLOR.SUCCESS
     this.setStatus(controller.detail || controller.state, color)
 
+    // Everything below is decided by the layout alone, so when only the caption
+    // has moved there is nothing below to redo.
+    //
+    // This is not housekeeping. Connecting now reports each step it takes --
+    // several of them from inside Bluetooth callbacks -- and a full repaint is
+    // seven native setProperty calls. Doing all seven to change one line of
+    // text would mean the reporting of a stall on those callbacks had become a
+    // seven-fold increase in the work done on them.
+    //
+    // Compared by plan rather than by state: LAYOUT entries are fixed objects,
+    // and two states that share one -- READY and BUSY do, field for field --
+    // have nothing to repaint between them either. Keying on the state name
+    // would repaint all seven properties on every command.
+    if (this.state.rendered === plan) return
+
     if (plan.primary) {
       const style = BUTTONS[plan.primary]
       w.primary.setProperty(prop.MORE, {
@@ -312,10 +399,25 @@ Page(BasePage({
     w.controls.setProperty(prop.VISIBLE, plan.small)
     w.logoLarge.setProperty(prop.VISIBLE, plan.logo === 'large')
     w.logoSmall.setProperty(prop.VISIBLE, plan.logo === 'small')
+
+    // Marked applied only once it has been. Set before the writes, a native
+    // setProperty that threw would leave the cache claiming a layout that is
+    // half painted, and every later render would agree there was nothing to do.
+    this.state.rendered = plan
   },
 
   onDestroy () {
+    this.state.destroyed = true
+    if (this.state.vinPoll) clearTimeout(this.state.vinPoll)
+    // Anything still waiting on the phone is abandoned here. Its answer would
+    // otherwise arrive seconds later and paint into widgets that are gone.
+    if (this.state.phone) this.state.phone.close()
     resetPageBrightTime()
-    if (this.state.controller) this.state.controller.disconnect()
+    if (this.state.controller) {
+      // Closing the app is not a crash. disconnect() drops the trail too, but
+      // this covers the case where there is no live connection to drop.
+      this.state.controller.forgetConnectStep()
+      this.state.controller.disconnect()
+    }
   }
 }))

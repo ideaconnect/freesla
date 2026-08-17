@@ -25,10 +25,12 @@ import { push } from '@zos/router'
 import { px } from '@zos/utils'
 import { setScrollMode, SCROLL_MODE_FREE } from '@zos/page'
 import { setPageBrightTime, resetPageBrightTime } from '@zos/display'
+import { BasePage } from '@zeppos/zml/base-page'
 
 import { createStorage } from '../lib/zepp/storage.js'
 import { createBleTransport } from '../lib/zepp/ble-transport.js'
 import { createController, STATE } from '../lib/app/controller.js'
+import { createPhoneChannel, createSharedSecretDeriver } from '../lib/app/phone.js'
 import { closureStateName, lockStateName } from '../lib/tesla/messages.js'
 import {
   CLOSURE_FIELD, CLOSURE_STATE, VEHICLE_LOCK_STATE, TRUST
@@ -111,9 +113,13 @@ const CONTROLS = [
   }
 ]
 
-Page({
+// BasePage rather than a bare Page: this screen now reaches the phone for the
+// one-time shared secret, and ZML's request machinery only exists on a page
+// built this way.
+Page(BasePage({
   state: {
     controller: null,
+    phone: null,
     status: null,
     captions: {},
     armed: null,
@@ -124,9 +130,20 @@ Page({
     setPageBrightTime({ brightTime: 300000 })
     setScrollMode({ mode: SCROLL_MODE_FREE })
 
+    // Any command can be the first this watch has ever sent to a given car, and
+    // the shared secret behind it has to come from the phone. This screen used
+    // to build a controller without that, so a closure tapped before the main
+    // screen had ever reached the car failed with no way to recover.
+    const phone = createPhoneChannel({
+      request: (payload) => this.request(payload),
+      log: (message) => console.log('[freesla] ' + message)
+    })
+    this.state.phone = phone
+
     const controller = createController({
       storage: createStorage(),
       createTransport: createBleTransport,
+      deriveSharedSecret: createSharedSecretDeriver(phone),
       log: (message) => console.log('[freesla] ' + message),
       onChange: (state, detail) => this.showStatus(state, detail),
       onStatusChange: () => this.renderClosureState()
@@ -303,9 +320,12 @@ Page({
 
   onDestroy () {
     // The confirm timer must not outlive the screen, or it would fire against a
-    // widget that no longer exists.
+    // widget that no longer exists. The same goes for a phone request still in
+    // flight, whose deadline would otherwise land here after the widgets are
+    // gone.
     this.disarm()
+    if (this.state.phone) this.state.phone.close()
     resetPageBrightTime()
     if (this.state.controller) this.state.controller.disconnect()
   }
-})
+}))

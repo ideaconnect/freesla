@@ -8,6 +8,7 @@ import assert from 'node:assert'
 import crypto from 'node:crypto'
 
 import { createClient } from '../lib/tesla/client.js'
+import { localSharedSecret } from '../lib/tesla/session.js'
 import { createMockVehicle } from '../tools/mock-vehicle.js'
 import { createSimulatedBleLink } from '../tools/ble-link.js'
 import { derivePublicKey, generatePrivateKey } from '../lib/crypto/p256.js'
@@ -40,7 +41,7 @@ function setup (chunkSize) {
     }
   })
 
-  const client = createClient({ vin: VIN, privateKey, publicKey, link, randomBytes })
+  const client = createClient({ vin: VIN, privateKey, publicKey, link, randomBytes, deriveSharedSecret: localSharedSecret })
   return { vehicle, client, stats }
 }
 
@@ -91,7 +92,7 @@ test('enrolment and recovery both work through fragmentation', async () => {
   const publicKey = derivePublicKey(privateKey)
 
   const link = createSimulatedBleLink(vehicle.link, { chunkSize: 20 })
-  const client = createClient({ vin: VIN, privateKey, publicKey, link, randomBytes })
+  const client = createClient({ vin: VIN, privateKey, publicKey, link, randomBytes, deriveSharedSecret: localSharedSecret })
 
   client.requestEnrolment()
   await new Promise((resolve) => setTimeout(resolve, 40))

@@ -5,7 +5,10 @@
   "type": "module",
   "main": "app.js",
   "scripts": {
-    "test": "node --test \"test/*.test.js\""
+    "test": "node --test \"test/*.test.js\"",
+    "verify": "node tools/verify.js",
+    "mock-car": "dotnet run --project mock-car --",
+    "verify:mock-car": "dotnet build mock-car -v q --nologo && node tools/verify-mock-car.js"
   },
   "author": "IDCT (https://idct.tech)",
   "license": "BSD-3-Clause",

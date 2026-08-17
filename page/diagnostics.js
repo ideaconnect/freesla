@@ -16,7 +16,6 @@ import { setPageBrightTime, resetPageBrightTime } from '@zos/display'
 import { createStorage } from '../lib/zepp/storage.js'
 import { probeRandomness, measureClockJitter, probeCapabilities, resetProbe, VERDICT }
   from '../lib/app/rng-probe.js'
-import { derivePublicKey } from '../lib/crypto/p256.js'
 
 const COLOR_OK = 0x3fb950
 const COLOR_WARN = 0xd29922
@@ -80,37 +79,27 @@ Page({
         '  ·  BigInt ' + (caps.bigint ? 'yes' : 'no') + '\n' +
         'clock deltas ' + (jitter ? jitter.distinctDeltas : '?') + ' distinct of ' +
         (jitter ? jitter.rounds : '?') + '\n' +
-        'measuring key speed…'
+        'curve maths: on the phone'
     })
 
-    // The scalar multiplication blocks the interpreter, so it runs after the
-    // screen has been painted.
-    setTimeout(() => {
-      const scalar = new Uint8Array(32)
-      for (let i = 0; i < 32; i++) scalar[i] = (i * 7 + 3) & 0xff
-
-      const started = Date.now()
-      derivePublicKey(scalar)
-      const elapsed = Date.now() - started
-
-      w.facts.setProperty(prop.MORE, {
-        text: 'runs ' + report.runs + '  ·  distinct ' + report.distinctRunsRecorded + '\n' +
-          'secure RNG ' + (caps.webCrypto ? 'yes' : 'no') +
-          '  ·  BigInt ' + (caps.bigint ? 'yes' : 'no') + '\n' +
-          'clock deltas ' + (jitter ? jitter.distinctDeltas : '?') + ' distinct of ' +
-          (jitter ? jitter.rounds : '?') + '\n' +
-          'P-256 scalar mult ' + elapsed + ' ms'
-      })
-      console.log('[freesla] diagnostics: verdict=' + report.verdict +
-        ' runs=' + report.runs +
-        ' distinct=' + report.distinctRunsRecorded +
-        ' webCrypto=' + caps.webCrypto +
-        ' bigint=' + caps.bigint +
-        ' jitterDeltas=' + (jitter ? jitter.distinctDeltas : '?') +
-        ' jitterZeros=' + (jitter ? jitter.zeroDeltas : '?') +
-        ' scalarMultMs=' + elapsed +
-        ' sample=' + report.sample)
-    }, 80)
+    // This screen used to time a P-256 scalar multiplication here, to find out
+    // how slow the watch really was. It found out: about 87 seconds, held in a
+    // single call, which is long enough for the watchdog to reset the device --
+    // so the measurement destroyed the thing it was measuring, and the only way
+    // to read the number was from the log of a watch that had just rebooted.
+    //
+    // The question it existed to answer is settled and the app no longer does
+    // the operation at all: the keypair and the ECDH both happen on the phone.
+    // Putting a benchmark back here would put a button on this screen whose
+    // only reliable effect is restarting the watch.
+    console.log('[freesla] diagnostics: verdict=' + report.verdict +
+      ' runs=' + report.runs +
+      ' distinct=' + report.distinctRunsRecorded +
+      ' webCrypto=' + caps.webCrypto +
+      ' bigint=' + caps.bigint +
+      ' jitterDeltas=' + (jitter ? jitter.distinctDeltas : '?') +
+      ' jitterZeros=' + (jitter ? jitter.zeroDeltas : '?') +
+      ' sample=' + report.sample)
 
     // The launch sample is what actually settles the question. Shown here so it
     // can be copied into tools/invert-seed.js, which searches for a clock

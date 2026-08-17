@@ -25,11 +25,18 @@ export function createFakeTransportFactory (vehicle, settings) {
       onState(next, detail)
     }
 
+    // The name the controller last asked to be found. The real transport scans
+    // for exactly this and ignores everything else, so it is the whole of
+    // whether the right car is reachable -- worth being able to assert on.
+    let deviceName = null
+
     current = {
       get state () { return state },
       get rssi () { return config.rssi === undefined ? -50 : config.rssi },
+      get deviceName () { return deviceName },
 
-      connect () {
+      connect (name) {
+        deviceName = name
         moveTo(STATE.SCANNING, 'Looking for your car')
         // A scan turns up other advertisements too; they are offered as entropy.
         onObservation(new Uint8Array([0xde, 0xad, 0xbe, 0xef, 0x01, 0x02, 0x03, 0x04]))
@@ -43,7 +50,14 @@ export function createFakeTransportFactory (vehicle, settings) {
       close () { moveTo(STATE.IDLE, 'closed') },
 
       // Models the car passing out of range.
-      simulateDisconnect () { moveTo(STATE.IDLE, 'disconnected') }
+      simulateDisconnect () { moveTo(STATE.IDLE, 'disconnected') },
+
+      // Models a scan that ran its course without finding anything -- the
+      // failure a wrong name produces, and the one a car parked elsewhere
+      // produces too.
+      simulateScanFailure (detail) {
+        moveTo(STATE.FAILED, detail || 'Car not found. Stand next to it and try again.')
+      }
     }
     return current
   }

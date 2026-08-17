@@ -13,9 +13,9 @@ Not affiliated with, endorsed by, or sponsored by Tesla, Inc.
 
 A Tesla phone key is only useful once **the owner has enrolled its public key in
 the car**, and the only way to do that is to tap an already-enrolled NFC keycard
-on the centre console. This app generates its own P-256 keypair on the watch and
-asks to be enrolled; until someone with physical possession of a valid keycard
-approves it, the key is inert.
+on the centre console. This app has its own P-256 keypair — built on the phone
+during setup, then held by the watch — and asks to be enrolled; until someone
+with physical possession of a valid keycard approves it, the key is inert.
 
 That is the same position a legitimate phone key is in. Building this client
 gives you no way into a car you cannot already open — much as writing an SSH
@@ -23,8 +23,11 @@ client gives you no access to servers your key is not on. The protocol itself is
 published by Tesla in the [`vehicle-command`](https://github.com/teslamotors/vehicle-command)
 SDK, which exists precisely so third parties can build integrations.
 
-The private key is generated on the watch and never leaves it. Uninstalling the
-app destroys it; revoke the corresponding entry from the Tesla app afterwards.
+The private key is generated on your phone during setup, sent to the watch once,
+and lives on the watch from then on. Uninstalling the app destroys it; revoke the
+corresponding entry from the Tesla app afterwards. See
+[Where the key comes from](#where-the-key-comes-from) for why it is made there
+and what that costs.
 
 ## Status
 
@@ -38,18 +41,50 @@ app destroys it; revoke the corresponding entry from the Tesla app afterwards.
 | **Real watch BLE** | **Not tested — the Zepp simulator has no Bluetooth** |
 
 The last two rows are the honest gap. Everything testable without hardware has
-been tested; the BLE transport in particular is written from Zepp's API surface
-and Zepp's own `easy-ble` library, and has never run on a wrist.
+been tested; the BLE transport is written from Zepp's API surface and Zepp's own
+`easy-ble` library.
+
+Running it on a real watch found three faults in that transport, all of the same
+kind — misusing the radio in ways no simulator can reproduce, because the
+simulator has no radio to misuse:
+
+- **Every fragment of a message was written in one synchronous loop**, with
+  nothing waiting for the controller to drain. A handshake is a few hundred
+  bytes, which at a 20-byte MTU is a dozen back-to-back writes. This is what
+  took the whole watch down. Writes are now queued one at a time behind
+  `mstOnCharaWriteComplete`, with a timer in case the stack never reports.
+- **A connection was opened from inside the scan callback**, while the stack was
+  still unwinding the scan. There is now a settle delay between the two.
+- **Teardown freed the GATT profile before closing the connection using it.**
+  Reversed.
+- **The `mstOn*` callback convention was guessed, and guessed wrong.** Zepp's
+  typings declare positional arguments; Zepp's own `easy-ble` reads a single
+  object. This code assumed the object form everywhere. Being wrong is silent:
+  every field reads back `undefined` and the handler concludes nothing happened.
+  `mstOnPrepare` reported a status of `undefined`, which compared unequal to
+  `0`, so preparation was declared failed and notifications were never enabled —
+  leaving a connection nobody spoke on, which the car dropped a few seconds
+  later and the screen reported as **the car being out of range, from the
+  driver's seat**. Both conventions are now accepted, and both are tested.
+
+The logic now lives in `lib/zepp/ble-session.js`, which takes the radio API as
+an argument and imports no `@zos` module, so it can be driven against a fake
+radio — `lib/zepp/ble-transport.js` is just the binding that supplies the real
+one. The fake refuses overlapping writes, connecting mid-scan, and freeing a
+live profile, so those three faults cannot return quietly.
 
 ## Setup
 
-1. Enter your VIN in the app's settings page in the Zepp phone app. This is the
-   only configuration there is — the VIN determines the BLE name the car
-   advertises under and is bound into every command signature, so it cannot be
-   discovered automatically.
-2. Open Freesla on the watch and tap **Create key**. This takes a few seconds.
-3. Stand next to the car, tap **Add to car**, then tap an existing keycard on
-   the centre console when the car asks.
+1. Enter your VIN in the app's settings page in the Zepp phone app. It is the
+   only thing the app ever needs to be told — the VIN determines the BLE name
+   the car advertises under and is bound into every command signature, so it
+   cannot be discovered automatically.
+2. Open Freesla on the watch. It collects the VIN from the phone by itself;
+   **Check phone** asks again if the phone was not reachable the first time.
+3. Tap **Create key**. This takes a few seconds.
+4. Stand next to the car and tap **Add to car**, then tap an existing keycard on
+   the centre console when the car asks. The watch finds and connects to the car
+   on its own — there is no separate connect step.
 
 After that the watch is standalone. The phone is never needed again.
 
@@ -118,14 +153,21 @@ under three constraints that ruled out every off-the-shelf library:
   rather than failing, so the protocol client is callback-driven.
 - **No JIT.** QuickJS 2020-07-05, a pure interpreter.
 
-The elliptic-curve work is the only slow part, and it is arranged to happen
-almost never. The ECDH shared secret depends only on our private key and the
-vehicle's, so it is computed once and cached in watch storage; every unlock
-afterwards costs one AES-GCM encryption of about a hundred bytes. Key
-generation is a one-time cost at setup.
+The elliptic-curve work is the only slow part, and the watch does none of it.
+There are exactly two such operations and both are one-time: generating the
+keypair, at pairing, and deriving the ECDH shared secret, on first contact with
+a given car. Both happen on the phone and both results are cached on the watch —
+the shared secret depends only on the two key pairs, so it stays valid for the
+life of both. Every unlock after that costs one AES-GCM encryption of about a
+hundred bytes, and needs no phone at all.
 
-Scalar multiplication runs in ~9 ms on a desktop. Even at a 100× interpreter
-penalty that stays well under a second, and it is off the unlock path entirely.
+The penalty is not the 100× one might assume. A P-256 scalar multiplication is
+~14 ms in a phone's JS engine and **~87 seconds** on the Zepp interpreter, and
+there is nothing native to fall back on: Zepp OS 3.0 declares twenty-one modules
+and not one of them does curves, hashing or randomness. Run on the watch inside
+the Bluetooth callback that delivers the car's handshake reply, that block does
+not freeze the screen — it resets the watch. `test/watch-workload.test.js` is
+the guard that keeps it off the device.
 
 ## Layout
 
@@ -154,6 +196,8 @@ page/           watch UI
 setting/        phone settings page (VIN entry)
 app-side/       phone companion — relays the VIN, nothing more
 tools/          mock vehicle, simulated BLE link, verification script
+mock-car/       a computer pretending to be a car: real BLE peripheral, C#
+freesla.config.js   build-time settings; one, and only for testing
 ```
 
 The protocol client talks to an abstract link with `send` and `onMessage`. On
@@ -168,6 +212,17 @@ npm install -g @zeppos/zeus-cli   # the Zepp toolchain, not an npm dependency
 zeus build                        # produces dist/*.zab
 zeus dev                          # live-reload into the Zepp simulator
 ```
+
+[`freesla.config.js`](freesla.config.js) is read at build time and inlined into
+the bundle. It holds two settings, both off in every committed build:
+
+- `BLE_NAME_OVERRIDE` — the name the watch scans for, instead of the one it
+  derives from the VIN. It exists so the watch can be pointed at
+  [mock-car](mock-car/README.md) on a Windows machine, which cannot advertise
+  under a Tesla's name. A build carrying it will not find a real car.
+- `CONNECT_BREADCRUMB` — write each connection step to storage, so a watch that
+  restarts mid-connection can say where it stopped. See below; it costs a flash
+  write per step, so it is for investigating a fault rather than for shipping.
 
 The rendered artwork under `assets/` and the inlined images in
 `setting/assets.js` are generated but **committed**, so a clone builds without
@@ -202,6 +257,108 @@ The mock also enforces what a real car enforces — whitelist membership, epoch,
 strictly increasing counters, expiry — so rejection paths are covered, including
 recovery after the car reboots and rotates its epoch.
 
+### A car that is not JavaScript, and a car with a radio
+
+`mock-car/` is the same idea taken two steps further: a small C# program that
+pretends to be a Tesla, as a **real BLE peripheral** — a GATT server carrying
+Tesla's vehicle service, advertised so a watch can find and connect to it — and
+as a socket on `127.0.0.1:7070` for everything that does not need a radio.
+
+```
+dotnet build mock-car                 # Windows 10 19041+, .NET 8+
+npm run verify:mock-car               # the watch's client against it, over a socket
+npm run mock-car -- --vin <YOUR VIN>  # be that car; press ? for what the keys do
+```
+
+It is a second opinion twice over. `tools/mock-vehicle.js` is honest JavaScript
+talking to JavaScript in one process; this is another language, another crypto
+library, another TLV encoder and another process, with the bytes crossing a
+socket in 20-byte fragments. Anything the two JavaScript halves agree on by
+construction has to survive that too.
+
+One caveat, and it is Windows': **a program cannot choose the name its own
+advertisements carry**, and a Tesla is found by name — so the mock advertises
+under the machine's own name, whatever VIN it is pretending to have.
+
+The way round it is a build-time setting, `BLE_NAME_OVERRIDE` in
+[`freesla.config.js`](freesla.config.js): the name the watch scans for, in place
+of the one it derives from the VIN. `teslamock doctor` prints the line to paste,
+with this machine's name already in it. Empty it again before building for a
+real car — a build carrying an override looks for that name and nothing else,
+which on the watch looks exactly like a car out of range. `node tools/verify.js`
+warns when one is set. `mock-car/README.md` covers the alternatives, including
+`teslamock name --set`, which takes the car's name for the machine instead.
+
+## When the watch restarts instead of connecting
+
+A Zepp watch that trips its watchdog does not report a fault — it reboots, and
+the screen, the console and the app's memory go with it. This has happened here
+before: the session-key derivation once ran inside the BLE notification callback
+for 87 seconds, which the watchdog treated exactly as it should have. Both ends
+of the link are now instrumented for it.
+
+**The watch says which step it is on.** "Connecting" used to cover the scan, the
+connection, three separate calls declaring and discovering the GATT profile, and
+the descriptor write that switches notifications on — any of which can be the
+last thing the watch does, and all of which looked identical. Each is now its
+own caption, on screen and in the log, timed from the start of the attempt:
+
+```
+[freesla] +0ms    ble scanning: looking for Sade9a822faa374f8C
+[freesla] +4ms    ble connecting: found it at -63 dBm
+[freesla] +129ms  opening the link
+[freesla] +314ms  ble preparing: link open
+[freesla] +378ms  declaring the profile          ← mstBuildProfile
+[freesla] +505ms  resolving the profile          ← mstGetProfileInstance
+[freesla] +631ms  finding the profile on the car ← mstPrepare
+[freesla] +821ms  the car answered; registering for notifications
+[freesla] +821ms  switching notifications on
+[freesla] +821ms  ble ready
+```
+
+Each of the three profile calls is announced separately and given a gap before
+it, because they used to run as three consecutive statements in one tick — the
+only place in that file where consecutive calls into the Bluetooth stack got no
+breath between them, while the code either side of them defers by 120ms, 50ms
+and 60ms with comments explaining why. `profileSettleMs` (default 120) is the
+gap; setting it to `0` restores the old back-to-back behaviour, which is how to
+tell whether the gap is doing anything.
+
+Discovery is also bounded now: if `mstPrepare` never calls back, the attempt
+fails after `prepareTimeoutMs` (default 8s) instead of leaving the screen on
+"finding the profile on the car" with nothing left to move it.
+
+The caption is painted synchronously, including from inside the stack's own
+callbacks, because a watch that dies in one never runs a deferred paint — the
+screen would freeze on the step *before* the fatal one. What that costs is kept
+down at the other end: a step changes the caption and nothing else, and the page
+repaints only the caption when only the caption has changed.
+
+**The car says what it saw.** `teslamock -v` traces the same connection from
+outside, with the same elapsed figures, and reports silence out loud —
+see [mock-car/README.md](mock-car/README.md#when-the-watch-restarts-instead-of-connecting).
+Line the two up: the watch's last caption and the car's last line bracket the
+operation between them.
+
+**And a breadcrumb outlives the reboot.** With `CONNECT_BREADCRUMB` on in
+[`freesla.config.js`](freesla.config.js), each step is written to storage, and
+the next launch reports what the last run never got past:
+
+```
+Last run stopped at switching notifications on (+536ms). Tap to try again.
+```
+
+That build also stops connecting automatically at launch when it finds one. If
+connecting is what restarts the watch, then connecting again the moment it comes
+back up is a boot loop its wearer cannot escape — and it paints over the only
+evidence of the fault while doing so.
+
+It is off by default for a reason worth knowing before trusting a result: each
+step costs a synchronous flash write, and some land inside the Bluetooth
+callbacks that a stall in this window is suspected of. Turning it on changes
+what is being measured. If the reset gets *worse* with it on, that is itself
+the finding.
+
 ## Randomness, and why it matters more than the curve maths
 
 Zepp OS provides no cryptographically secure random generator — only
@@ -228,19 +385,56 @@ than assume it** — see below.
 
 Three things are done about it:
 
-- **The phone's generator is required, not merely preferred.** At key creation
-  the watch asks the phone companion for 48 bytes from `crypto.getRandomValues`.
-  The seed becomes `SHA-256(phone entropy ‖ watch entropy)`, so an attacker must
-  defeat both; neither being weak is sufficient alone. If no strong source
-  answers, **generation is refused** rather than quietly producing a guessable
-  key. There is an explicit override in settings for testing, and it says what
-  it costs.
-- **BLE scan observations are mixed in.** Nearby device addresses and their
-  signal strengths are the least predictable thing the watch can see unaided.
-  (This was wired up late — an earlier version collected them and then never
-  passed them to the generator.)
+- **The phone's generator is required, not merely preferred.** The key is drawn
+  from `crypto.getRandomValues` on the phone. If no strong source answers,
+  **generation is refused** rather than quietly producing a guessable key.
+- **There is no fallback, and that is the point.** An earlier version had the
+  phone send 48 bytes of entropy for the watch to build its own key from,
+  seeded `SHA-256(phone ‖ watch)`. It was removed: it needed the two things
+  this platform is worst at — a secure generator it does not have and ninety
+  seconds of scalar multiplication — and a key that is merely *probably*
+  unguessable is worse than none, because the car trusts it exactly like a
+  real one. If the phone cannot produce a key, the watch says so and stops.
+- **BLE scan observations are still mixed in**, but only for routing addresses
+  and request uuids — never for key material, which no longer originates here.
+  Nearby device addresses and signal strengths are the least predictable thing
+  the watch can see unaided.
 - **A diagnostics screen measures the real behaviour.** Tap the title on the
   main screen.
+
+### Where the key comes from
+
+The keypair is built on the phone and sent to the watch once, during setup.
+
+This is a deliberate trade, and it is worth stating plainly. The elliptic-curve
+maths is identical on both sides — the same `lib/crypto/p256.js` — but the
+scalar multiplication that derives the public key was measured at **87 seconds**
+on the Zepp device runtime against **12 ms** under Node. That is the interpreter,
+not the algorithm. Ninety seconds of setup during which the watch cannot repaint
+is not something to ask of anyone, so the work goes where it is quick.
+
+There is no watch-side fallback, and that is deliberate. The alternative the app
+used to implement — the phone sending only entropy, the watch deriving the key
+itself — kept the private key off the link, but it needed the two things this
+platform is worst at: a secure generator it does not have, and ninety seconds of
+scalar multiplication. A key made without the first is worse than no key,
+because the car trusts it exactly like a real one.
+
+What it costs: the private key crosses the Bluetooth link. Anyone who captures
+one of those messages holds a working car key. It crosses at setup, and again
+the first time the watch meets a particular car — the ECDH has to happen where
+the maths is affordable, and the phone does not keep the key afterwards.
+
+Practical advice: do the one-time setup, and the first unlock of a given car,
+somewhere you would be comfortable unlocking it anyway. After that the phone is
+never involved again, and enabling PIN to Drive protects you regardless of what
+any key can do.
+
+The watch does not take the phone's word for the key. The private key must be a
+valid scalar and the public key a real point on the curve, both checked before
+anything is stored. What is deliberately *not* checked is that the two halves
+correspond, since verifying that means deriving the public key — the 87 seconds
+this exists to avoid. A mismatched pair simply fails at enrolment, visibly.
 
 ### Run the randomness check first
 
@@ -254,9 +448,15 @@ and look again. The second reading is the one that counts:
 | `Seed space small` | A previous sample reappeared. Treat any key as weak. |
 | `Seed varies` | The seed is not constant. Necessary, but it does **not** prove the seed is hard to guess. |
 
-The same screen reports whether a secure RNG or BigInt exists, how many distinct
-clock deltas a jitter loop produces, and how long a P-256 scalar multiplication
-takes on your watch. All of it is also written to the console log.
+The same screen reports whether a secure RNG or BigInt exists and how many
+distinct clock deltas a jitter loop produces. All of it is also written to the
+console log.
+
+It used to time a P-256 scalar multiplication too. That measurement answered its
+question — about 87 seconds — by taking the watch down with the watchdog every
+time it ran, so the number could only be read from the log of a device that had
+just rebooted. The answer is settled and the app no longer performs the
+operation, so the benchmark is gone.
 
 Be careful reading `Seed varies`: it is exactly what clock seeding looks like.
 The timestamp differs every launch, so the samples differ, and the cross-restart
@@ -295,10 +495,14 @@ seeding, not a small seed space in general.
 - **One connection at a time**, and only the VCSEC domain (lock, unlock, trunk,
   frunk, wake) is implemented. Climate and charging live in the infotainment
   domain and would need a second session.
-- The BLE transport works around two documented-API defects: the `mstOn*`
-  callbacks deliver a single object rather than positional arguments, and
-  `mstBuildProfile` must follow `mstOnPrepare` with a short delay. Both come
-  from Zepp's own library rather than their docs.
+- The BLE transport works around documented-API disagreements. `mstBuildProfile`
+  must follow `mstOnPrepare` with a short delay, which comes from Zepp's own
+  library rather than their docs. The `mstOn*` argument convention is the other,
+  and this used to state confidently that the callbacks deliver a single object
+  rather than positional arguments — that claim came from reading `easy-ble`,
+  not from a watch, and on a watch it did not hold. The transport now accepts
+  either shape rather than asserting which is right; see
+  [Status](#status).
 
 ## Licence
 

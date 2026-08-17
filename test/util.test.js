@@ -4,6 +4,7 @@ import crypto from 'node:crypto'
 
 import { toHex, fromHex } from '../lib/util/hex.js'
 import { normaliseVin } from '../lib/app/identity.js'
+import { cleanVin } from '../lib/app/vin.js'
 import { createDrbg, collectWatchEntropy } from '../lib/crypto/random.js'
 
 test('hex round trips arbitrary bytes', () => {
@@ -40,6 +41,18 @@ test('vin normalisation rejects invalid vins', () => {
   assert.strictEqual(normaliseVin('5YJ30123456789ABI'), null, 'I accepted')
   assert.strictEqual(normaliseVin('5YJ30123456789ABO'), null, 'O accepted')
   assert.strictEqual(normaliseVin('5YJ30123456789ABQ'), null, 'Q accepted')
+})
+
+test('the loose vin tidy keeps partial input usable', () => {
+  // What the phone stores while the owner is still typing. Rejecting an
+  // incomplete VIN here would mean the field could never be filled in, so this
+  // one only tidies -- deciding whether a VIN is real is normaliseVin's job.
+  assert.strictEqual(cleanVin('5yj3-01'), '5YJ301')
+  assert.strictEqual(cleanVin(''), '')
+  assert.strictEqual(cleanVin(null), '')
+  assert.strictEqual(cleanVin(undefined), '')
+  // Deliberately not validated: this is a prefix, not a verdict.
+  assert.strictEqual(cleanVin('5YJ30123456789ABCDEF'), '5YJ30123456789ABCDEF')
 })
 
 test('the drbg is deterministic for a seed and varies across seeds', () => {

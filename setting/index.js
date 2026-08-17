@@ -6,6 +6,7 @@
 // what the app can and cannot promise.
 
 import { idctLogo, githubMark, freeslaLogo, coffeeMark } from './assets.js'
+import { cleanVin } from '../lib/app/vin.js'
 
 const BRAND = '#1f6feb'
 const INK = '#1a1a1a'
@@ -117,7 +118,7 @@ AppSettingsPage({
           label: 'VIN',
           placeholder: '17 characters, e.g. 5YJ3E1EA7KF000000',
           value: vin,
-          onChange: (value) => storage.setItem('vin', JSON.stringify(normalise(value)))
+          onChange: (value) => storage.setItem('vin', JSON.stringify(cleanVin(value)))
         }),
         Text({
           style: {
@@ -136,9 +137,11 @@ AppSettingsPage({
       heading('Setting up'),
       card([
         step(1, 'Enter your VIN above.'),
-        step(2, 'Open Freesla on your watch and tap Create key. It takes a few seconds.'),
-        step(3, 'Stand next to the car, tap Add to car, then hold an existing key ' +
-          'card against the centre console when the car asks.'),
+        step(2, 'Open Freesla on your watch. It picks the VIN up from this phone ' +
+          'by itself — tap Check phone if it does not appear.'),
+        step(3, 'Tap Create key. It takes a few seconds.'),
+        step(4, 'Stand next to the car and tap Add to car, then hold an existing ' +
+          'key card against the centre console when the car asks.'),
         tip('info', 'Then you are done',
           'The watch works on its own after this — locking and unlocking never ' +
           'involve your phone. You can leave it at home.')
@@ -164,14 +167,19 @@ AppSettingsPage({
       card([
         entropyRow(entropy),
         entropyFooter(storage, entropy, readString(storage, 'entropyCheckedAt')),
-        body('Your watch has no secure random number generator, so the key is ' +
-          'created using randomness from this phone. This happens once, while ' +
-          'you tap Create key — never again afterwards.'),
+        body('Your watch has no secure random number generator, and the maths ' +
+          'takes it about ninety seconds. So the key is created on this phone ' +
+          'and sent to the watch. This happens once, while you tap Create key — ' +
+          'never again afterwards.'),
         tip('info', 'Why this matters',
           'The public half of your key is broadcast in the clear every time the ' +
           'watch talks to the car. If the key were guessable, someone could work ' +
-          'it out without ever touching your car — so the watch refuses to make ' +
+          'it out without ever touching your car — so the app refuses to make ' +
           'one it cannot make properly. There is no way to override that.'),
+        tip('warn', 'The key crosses once',
+          'Your key travels from this phone to the watch a single time, during ' +
+          'setup. After that it lives only on the watch. Do the setup somewhere ' +
+          'you would be comfortable unlocking the car.'),
         tip('warn', 'Worth turning on',
           'Enable PIN to Drive in your car. It is independent of any key, so even ' +
           'a compromised one gets someone into the cabin but not away with the car.')
@@ -406,10 +414,6 @@ function readString (storage, key) {
   } catch (e) {
     return ''
   }
-}
-
-function normalise (value) {
-  return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 }
 
 // VINs never contain I, O or Q, so those are always a misread 1 or 0.
