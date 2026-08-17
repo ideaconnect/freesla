@@ -23,7 +23,7 @@
 // `teslamock` prints the exact line to paste, with the name this machine really
 // advertises already filled in. It is compared exactly as the scan reports it,
 // so the case has to match.
-export const BLE_NAME_OVERRIDE = ''
+export const BLE_NAME_OVERRIDE = 'IDCT-FLOW13'
 
 // Record each step of a connection attempt to storage, so that if the watch
 // restarts mid-connection the next launch can say where it stopped.
