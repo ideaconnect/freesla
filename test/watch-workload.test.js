@@ -48,7 +48,6 @@ function source (path) {
 // multiplication to find out how slow the watch was, which reset the watch.
 const WATCH_PATH = [
   'page/index.js',
-  'page/controls.js',
   'page/diagnostics.js',
   'lib/app/controller.js',
   'lib/app/device-name.js',
@@ -99,9 +98,9 @@ test('every page that builds a controller gives it somewhere to send the maths',
   // createClient throws without a delegate, but the controller wraps it, so a
   // page that forgets one fails only at the handshake -- and only against a car
   // this watch has never met, which is the one case a person testing at their
-  // own car will not hit. page/controls.js shipped exactly that way: every
-  // closure it offers would have failed on first contact with a new car while
-  // the main screen worked.
+  // own car will not hit. The closures screen shipped exactly that way before
+  // it was folded into page/index.js: every closure it offered would have
+  // failed on first contact with a new car while the main screen worked.
   for (const path of WATCH_PATH) {
     const text = source(path)
     if (!/createController\s*\(/.test(text)) continue

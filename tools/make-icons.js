@@ -93,17 +93,25 @@ const COLOURS = {
 // panel is a falcon wing whose obstruction sensing Tesla declines to promise.
 // There is no frunk-close either, because no Tesla has one.
 //
+// Colour carries one meaning: amber is a move the car cannot undo from here.
+// Opening the boot or the charge port is reversible from the same screen, so
+// both stay neutral. Raising the bonnet is not, unlatching the doors is not,
+// and driving a powered liftgate downwards is the direction that can shut on
+// something. Red is not a warning but an interruption: the control you reach
+// for when a panel is already moving and should not be.
+//
 // `set: 'vehicle'` means the glyph is drawn in tools/glyphs.js rather than taken
 // from Font Awesome. Every control that moves a panel of the car is one of
 // those, so the picture shows which panel and which way it is going.
 const CONTROLS = [
   { name: 'unlock', glyph: 'lock-open', colour: 'unlock', sizes: ['md', 'lg'] },
-  { name: 'lock', glyph: 'lock', colour: 'lock', sizes: ['sm', 'md'] },
+  { name: 'lock', glyph: 'lock', colour: 'lock', sizes: ['sm', 'md', 'lg'] },
   { name: 'doors-open', glyph: 'door-open', colour: 'caution', badge: 'arrow-up' },
   { name: 'trunk-open', glyph: 'car-trunk-open', set: 'vehicle', colour: 'neutral', badge: 'arrow-up' },
   { name: 'trunk-close', glyph: 'car-trunk-closing', set: 'vehicle', colour: 'caution', badge: 'arrow-down' },
   { name: 'frunk-open', glyph: 'car-frunk-open', set: 'vehicle', colour: 'caution', badge: 'arrow-up' },
-  { name: 'charge-port', glyph: 'bolt', colour: 'neutral' },
+  { name: 'charge-port', glyph: 'bolt', colour: 'neutral', badge: 'arrow-up' },
+  { name: 'charge-port-close', glyph: 'bolt', colour: 'neutral', badge: 'arrow-down' },
   { name: 'stop', glyph: 'hand', colour: 'danger' },
   { name: 'controls', glyph: 'sliders', colour: 'neutral', sizes: ['sm', 'md'] },
   { name: 'back', glyph: 'chevron-left', colour: 'neutral', sizes: ['sm', 'md'] },

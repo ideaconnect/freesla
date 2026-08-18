@@ -33,7 +33,11 @@ export const COLOR = {
   NEUTRAL: 0x2a2a2a,
   NEUTRAL_PRESS: 0x454545,
   ACCENT: 0x8a5a1f,
-  ACCENT_PRESS: 0xc4832f
+  ACCENT_PRESS: 0xc4832f,
+  // Stop is the only control that interrupts rather than commands, and the only
+  // one drawn as a bar. Matches the `danger` fill in tools/make-icons.js.
+  DANGER: 0x8a2320,
+  DANGER_PRESS: 0xc4342b
 }
 
 export const TITLE = {
@@ -60,43 +64,53 @@ export const PRIMARY = {
 
 // --- Driving -------------------------------------------------------------
 
-// Unlock, in the middle of the display.
+// What the car last said about itself, in one line.
 //
-// Centred rather than stacked with the others because it is the one button
-// pressed while walking, often without looking: the centre of a round watch is
-// the only target that can be found by feel.
-export const UNLOCK = {
-  x: px(156), y: px(156), w: px(168), h: px(168)
-}
-
-// Flanking Unlock, and vertically centred on it. Their far edges sit 28px inside
-// the bezel: centre 158px out from the middle, plus a 54px radius, against a
-// 240px screen radius.
-export const LOCK = {
-  x: px(28), y: px(186), w: px(108), h: px(108)
-}
-
-export const CONTROLS = {
-  x: px(344), y: px(186), w: px(108), h: px(108)
-}
-
-// One caption line under all three, on a shared baseline.
-export const CAPTIONS = {
-  y: px(330), h: px(30), text_size: px(23)
-}
-
-// What the car last said about itself: locked, or something standing open.
-//
-// Below the captions rather than up with the status, because the two answer
-// different questions -- the status line says what this watch is doing, and this
-// says what the car is. Blank until the car has actually said something; an
-// empty line is honest, and a guess dressed as a reading is not.
-// Sized for the longest thing it can say -- "Charge port open (unverified)" --
-// on one line. This box does not wrap, so an underestimate here does not spill
-// onto a second line, it silently loses the end of the sentence.
+// Sized for the longest thing it can say, "Charge port open (unverified)". This
+// box does not wrap, so an underestimate does not spill onto a second line, it
+// silently loses the end of the sentence.
 export const VEHICLE = {
-  x: px(56), y: px(366), w: px(368), h: px(30),
+  x: px(56), y: px(158), w: px(368), h: px(30),
   text_size: px(21)
+}
+
+// The driving face is one scrolling column, so its geometry is walked down
+// rather than written out: the page builds it top to bottom from these sizes
+// and keeps a running y. Fixed coordinates for a list this long are a set of
+// numbers that have to be re-derived by hand every time a row moves.
+//
+// The only position here is where the column starts. Everything else is a size
+// and a gap.
+export const DRIVE = {
+  top: px(200),
+
+  // Everything in the column is centred, so the horizontals live here too
+  // rather than being recomputed from a width the page would have to know.
+  heroX: px((480 - 168) / 2),
+  buttonX: px((480 - 120) / 2),
+  textX: px(56),
+  textW: px(368),
+
+  // Lock and Unlock are one button, and it is the biggest thing on the screen.
+  // It sits where a thumb lands without aiming, because it is the one control
+  // pressed while walking towards a car rather than standing at it.
+  hero: px(168),
+  heroCaption: { h: px(32), text_size: px(24) },
+
+  // Each closure below is a heading, a button, and what the car says that panel
+  // is. The heading is what makes the button legible without a caption crowded
+  // under it: "Trunk" over an open-boot icon needs no further sentence.
+  header: { h: px(34), text_size: px(26) },
+  button: px(120),
+  caption: { h: px(30), text_size: px(20) },
+
+  // Stop is wide and flat where everything else is a circle, so a hand reaching
+  // for it in a hurry cannot land on anything else by mistake.
+  stop: { x: px(90), w: px(300), h: px(78), radius: px(39), text_size: px(30) },
+
+  gap: px(8),
+  sectionGap: px(30),
+  footerGap: px(44)
 }
 
 // --- The mark ------------------------------------------------------------
@@ -115,6 +129,10 @@ export const LOGO_LARGE = {
   x: px((480 - 96) / 2), y: px(298), w: px(96), h: px(109)
 }
 
+// Follows the foot of whichever column it is under, so only its size and its
+// centring are fixed. The driving face is a scrolling list whose length depends
+// on how many controls the car has, and a fixed y would either float in the
+// middle of it or fall off the end.
 export const LOGO_SMALL = {
   x: px((480 - 40) / 2), y: px(428), w: px(40), h: px(45)
 }

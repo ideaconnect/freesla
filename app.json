@@ -29,7 +29,6 @@
         "page": {
           "pages": [
             "page/index",
-            "page/controls",
             "page/about",
             "page/diagnostics"
           ]

@@ -1,5 +1,6 @@
 import { createWidget, widget, align, text_style, prop } from '@zos/ui'
 import { push } from '@zos/router'
+import { setScrollMode, SCROLL_MODE_FREE } from '@zos/page'
 import { setPageBrightTime, resetPageBrightTime } from '@zos/display'
 import { BasePage } from '@zeppos/zml/base-page'
 import * as Styles from 'zosLoader:./index.[pf].layout.js'
@@ -23,9 +24,8 @@ const COLOR = Styles.COLOR
 //
 // `mode` is the whole of it. 'setup' is a sentence and a button, because every
 // state before the car is paired has something to explain. 'driving' is what
-// replaces them once there is nothing left to say: three round buttons, Unlock
-// in the middle of the display, which is the only spot on a round watch a thumb
-// finds without looking.
+// replaces them once there is nothing left to say: one scrolling column of
+// controls, with the lock at the top where a thumb lands without aiming.
 //
 // `logo` is 'large' while the car is still being set up, since those screens
 // are mostly empty and the mark gives them a centre, and 'small' once it is
@@ -65,6 +65,54 @@ const REPORTED = [
   { field: CLOSURE_FIELD.REAR_PASSENGER_DOOR, label: 'Door' }
 ]
 
+// The doors, as one control. Reported together because a single door ajar is
+// what matters, not which one.
+const DOORS = [
+  CLOSURE_FIELD.FRONT_DRIVER_DOOR, CLOSURE_FIELD.FRONT_PASSENGER_DOOR,
+  CLOSURE_FIELD.REAR_DRIVER_DOOR, CLOSURE_FIELD.REAR_PASSENGER_DOOR
+]
+
+// The column below the lock, in order.
+//
+// A section is a heading, one button, and what the car says that panel is. The
+// heading is what makes the button legible: "Trunk" over a raised-boot icon
+// needs no sentence under it explaining itself.
+//
+// `shut` and `open` make a control a toggle: the car is asked what the panel is
+// and offered the move that is left. Where only one direction exists the
+// section carries `only` instead, and the reason is never a UI decision --
+// no Tesla can close a frunk remotely, and closing a door is an actuator only
+// the Model X has, on a panel whose obstruction sensing Tesla will not promise.
+const SECTIONS = [
+  {
+    key: 'trunk',
+    heading: 'Trunk',
+    field: CLOSURE_FIELD.REAR_TRUNK,
+    shut: { art: 'trunk-open', action: 'openTrunk' },
+    open: { art: 'trunk-close', action: 'closeTrunk' }
+  },
+  { key: 'stop', stop: true },
+  {
+    key: 'frunk',
+    heading: 'Frunk',
+    field: CLOSURE_FIELD.FRONT_TRUNK,
+    only: { art: 'frunk-open', action: 'openFrunk' }
+  },
+  {
+    key: 'charge',
+    heading: 'Charge port',
+    field: CLOSURE_FIELD.CHARGE_PORT,
+    shut: { art: 'charge-port', action: 'openChargePort' },
+    open: { art: 'charge-port-close', action: 'closeChargePort' }
+  },
+  {
+    key: 'doors',
+    heading: 'Tesla X',
+    group: DOORS,
+    only: { art: 'doors-open', action: 'openDoors' }
+  }
+]
+
 Page(BasePage({
   state: {
     controller: null,
@@ -81,6 +129,11 @@ Page(BasePage({
     // BLE only runs while the app is foregrounded and the screen is lit; the
     // system otherwise closes the app about ten seconds after the screen dims.
     setPageBrightTime({ brightTime: 300000 })
+    // The driving face is longer than the display. Set unconditionally: the
+    // setup face is short enough that there is nothing to scroll, and making it
+    // conditional would mean setting it again when the state changes under a
+    // page that has already been built.
+    setScrollMode({ mode: SCROLL_MODE_FREE })
 
     const storage = createStorage()
     // Every request to the phone goes through here, so each one gets a deadline
@@ -107,7 +160,7 @@ Page(BasePage({
       // Vehicle status arrives on its own from the car's broadcasts as well as
       // in reply to commands, so the driving screen can say what is open
       // without this watch ever asking.
-      onStatusChange: () => this.renderVehicle()
+      onStatusChange: () => this.renderCar()
     })
 
     this.state.storage = storage
@@ -276,27 +329,70 @@ Page(BasePage({
       click_func: () => this.onPrimary()
     })
 
-    // The driving screen's three, as artwork rather than coloured rectangles.
+    // The driving column, walked down rather than positioned by hand. Widgets
+    // are built once and shown by state; a scrolling list rebuilt on every
+    // reading would churn memory on a watch for no benefit.
     //
     // Image buttons and not an icon laid over a coloured one: setting
     // normal_color alongside normal_src makes the flat colour paint over the
     // picture, and a separate widget on top of a button is a widget that might
     // swallow the tap. The circle, its rim and its glyph are baked into one
     // file by tools/make-icons.js.
-    w.unlock = this.imageButton('unlock-lg', Styles.UNLOCK,
+    const D = Styles.DRIVE
+    let y = D.top
+
+    // Lock and Unlock are one control wearing two faces. Both are built here,
+    // stacked, and exactly one is ever visible: swapping a button's artwork in
+    // place means prop.MORE, which does not merge and has to be handed every
+    // property the widget has. Two widgets and a visibility flag cannot go
+    // subtly wrong the way that can.
+    w.heroUnlock = this.imageButton('unlock-lg', { x: D.heroX, y, w: D.hero, h: D.hero },
       () => this.state.controller.unlock())
-    w.lock = this.imageButton('lock-sm', Styles.LOCK,
+    w.heroLock = this.imageButton('lock-lg', { x: D.heroX, y, w: D.hero, h: D.hero },
       () => this.state.controller.lock())
-    w.controls = this.imageButton('controls-sm', Styles.CONTROLS,
-      () => push({ url: 'page/controls' }))
+    y += D.hero + D.gap
 
-    // Captions below the buttons, never over them: text drawn on top of a
-    // button is text that has to be redrawn every time the button is pressed,
-    // and on this runtime it is also a second widget over the tap target.
-    w.capLock = this.caption(Styles.LOCK, 'Lock')
-    w.capUnlock = this.caption(Styles.UNLOCK, 'Unlock')
-    w.capControls = this.caption(Styles.CONTROLS, 'Controls')
+    w.heroCaption = this.centred(y, D.heroCaption.h, D.heroCaption.text_size, COLOR.TEXT, '')
+    y += D.heroCaption.h + D.sectionGap
 
+    w.sections = {}
+    for (const section of SECTIONS) {
+      if (section.stop) {
+        // Wide and flat where everything else is a circle, so a hand reaching
+        // for it in a hurry cannot land on anything else by mistake.
+        w.stop = createWidget(widget.BUTTON, {
+          x: D.stop.x, y, w: D.stop.w, h: D.stop.h,
+          radius: D.stop.radius,
+          text_size: D.stop.text_size,
+          color: COLOR.TEXT,
+          normal_color: COLOR.DANGER,
+          press_color: COLOR.DANGER_PRESS,
+          text: 'STOP',
+          click_func: () => this.state.controller.stopTrunk()
+        })
+        y += D.stop.h + D.sectionGap
+        continue
+      }
+
+      const built = { header: this.centred(y, D.header.h, D.header.text_size, COLOR.TEXT, section.heading) }
+      y += D.header.h + D.gap
+
+      const box = { x: D.buttonX, y, w: D.button, h: D.button }
+      if (section.only) {
+        built.only = this.imageButton(section.only.art, box, () => this.run(section.only.action))
+      } else {
+        built.shut = this.imageButton(section.shut.art, box, () => this.run(section.shut.action))
+        built.open = this.imageButton(section.open.art, box, () => this.run(section.open.action))
+      }
+      y += D.button + D.gap
+
+      built.caption = this.centred(y, D.caption.h, D.caption.text_size, COLOR.MUTED, '')
+      y += D.caption.h + D.sectionGap
+
+      w.sections[section.key] = built
+    }
+
+    // The summary of what the car is, above the whole column.
     w.vehicle = createWidget(widget.TEXT, {
       x: Styles.VEHICLE.x,
       y: Styles.VEHICLE.y,
@@ -310,7 +406,7 @@ Page(BasePage({
       text: ''
     })
 
-    // Both sizes are created once and shown by state; recreating widgets on
+    // Both marks are created once and shown by state; recreating widgets on
     // every render would churn memory on a watch for no benefit.
     w.logoLarge = createWidget(widget.IMG, {
       x: Styles.LOGO_LARGE.x,
@@ -320,12 +416,35 @@ Page(BasePage({
       src: 'brand/freesla.png'
     })
 
+    // Follows the foot of the column rather than sitting at a fixed height: the
+    // driving face is as long as the car has controls, and a fixed y would put
+    // the mark in the middle of the list.
     w.logoSmall = createWidget(widget.IMG, {
       x: Styles.LOGO_SMALL.x,
-      y: Styles.LOGO_SMALL.y,
+      y: y + D.footerGap,
       w: Styles.LOGO_SMALL.w,
       h: Styles.LOGO_SMALL.h,
       src: 'brand/freesla-small.png'
+    })
+  },
+
+  run (action) {
+    this.state.controller.run(action)
+  },
+
+  // A centred line of text spanning the column's text width.
+  centred (y, h, size, color, text) {
+    return createWidget(widget.TEXT, {
+      x: Styles.DRIVE.textX,
+      y,
+      w: Styles.DRIVE.textW,
+      h,
+      color,
+      text_size: size,
+      align_h: align.CENTER_H,
+      align_v: align.CENTER_V,
+      text_style: text_style.NONE,
+      text
     })
   },
 
@@ -338,22 +457,6 @@ Page(BasePage({
       normal_src: 'btn/' + art + '_n.png',
       press_src: 'btn/' + art + '_p.png',
       click_func: onPress
-    })
-  },
-
-  // A label on the shared caption baseline, as wide as the button above it.
-  caption (box, text) {
-    return createWidget(widget.TEXT, {
-      x: box.x,
-      y: Styles.CAPTIONS.y,
-      w: box.w,
-      h: Styles.CAPTIONS.h,
-      color: COLOR.MUTED,
-      text_size: Styles.CAPTIONS.text_size,
-      align_h: align.CENTER_H,
-      align_v: align.CENTER_V,
-      text_style: text_style.NONE,
-      text
     })
   },
 
@@ -480,13 +583,32 @@ Page(BasePage({
 
     const driving = plan.mode === 'driving'
     w.primary.setProperty(prop.VISIBLE, !!plan.primary)
-    w.unlock.setProperty(prop.VISIBLE, driving)
-    w.lock.setProperty(prop.VISIBLE, driving)
-    w.controls.setProperty(prop.VISIBLE, driving)
-    w.capUnlock.setProperty(prop.VISIBLE, driving)
-    w.capLock.setProperty(prop.VISIBLE, driving)
-    w.capControls.setProperty(prop.VISIBLE, driving)
     w.vehicle.setProperty(prop.VISIBLE, driving)
+    w.heroCaption.setProperty(prop.VISIBLE, driving)
+    w.stop.setProperty(prop.VISIBLE, driving)
+
+    for (const section of SECTIONS) {
+      const built = w.sections[section.key]
+      if (!built) continue
+      built.header.setProperty(prop.VISIBLE, driving)
+      built.caption.setProperty(prop.VISIBLE, driving)
+      if (built.only) built.only.setProperty(prop.VISIBLE, driving)
+    }
+
+    // The two-faced controls are left to renderCar(): which of each pair shows
+    // depends on what the car is, not on which screen this is, and driving them
+    // from here would flash the wrong one on every state change.
+    if (!driving) {
+      w.heroUnlock.setProperty(prop.VISIBLE, false)
+      w.heroLock.setProperty(prop.VISIBLE, false)
+      for (const section of SECTIONS) {
+        const built = w.sections[section.key]
+        if (!built || !built.shut) continue
+        built.shut.setProperty(prop.VISIBLE, false)
+        built.open.setProperty(prop.VISIBLE, false)
+      }
+    }
+
     w.logoLarge.setProperty(prop.VISIBLE, plan.logo === 'large')
     w.logoSmall.setProperty(prop.VISIBLE, plan.logo === 'small')
 
@@ -495,30 +617,81 @@ Page(BasePage({
     // half painted, and every later render would agree there was nothing to do.
     this.state.rendered = plan
 
-    // The car may have reported while another face was on screen, so the line
-    // is filled in on arrival here rather than waiting for the next broadcast.
-    if (driving) this.renderVehicle()
+    // The car may have reported while another face was on screen, so this is
+    // filled in on arrival here rather than waiting for the next broadcast.
+    if (driving) this.renderCar()
   },
 
-  // What the car last said about itself.
+  // What the car is, and therefore which move each control offers.
   //
   // Separate from render() because it changes on its own schedule: status
   // arrives from the car's broadcasts, which have nothing to do with which
-  // button is on screen. Left blank until something has actually arrived --
-  // "Locked" printed from an assumption is worse than saying nothing, since the
-  // whole reason to show it is that the wearer cannot see the car.
-  renderVehicle () {
+  // screen is up. Nothing here is printed from an assumption -- a control whose
+  // panel the car has not reported keeps offering the move it opened with,
+  // rather than guessing and offering the opposite of what is true.
+  renderCar () {
     const controller = this.state.controller
     const w = this.state.widgets
-    if (!w.vehicle) return
+    if (!w.sections) return
     if (!this.state.rendered || this.state.rendered.mode !== 'driving') return
 
     const status = controller.vehicleStatus
-    if (!status) return
-
     // An overheard broadcast is unauthenticated, so it is marked rather than
-    // presented as a reading. Worded exactly as the controls screen words it.
+    // presented as a reading.
     const suffix = controller.statusTrust === TRUST.OVERHEARD ? ' (unverified)' : ''
+
+    this.renderLock(status, suffix)
+    this.renderSummary(status, suffix)
+
+    for (const section of SECTIONS) {
+      const built = w.sections[section.key]
+      if (!built) continue
+
+      const state = this.panelState(section)
+      const known = state !== undefined
+      const shut = state === CLOSURE_STATE.CLOSED
+
+      if (built.shut) {
+        // A panel the car has not described leaves the opening move showing:
+        // it is the one that is safe to offer against an unknown, since a
+        // closed panel asked to close does nothing.
+        built.shut.setProperty(prop.VISIBLE, !known || shut)
+        built.open.setProperty(prop.VISIBLE, known && !shut)
+      }
+
+      built.caption.setProperty(prop.MORE, known
+        ? { text: closureStateName(state) + suffix, color: shut ? COLOR.MUTED : COLOR.WARN }
+        : { text: '', color: COLOR.MUTED })
+    }
+  },
+
+  // Lock and Unlock are one control, showing the move that is left.
+  //
+  // A car whose state is unknown is offered Unlock. That is the move somebody
+  // walking towards a car wants, it is what auto-unlock would have done
+  // unasked, and unlocking a car that is already unlocked costs nothing --
+  // where offering Lock against an unknown would put the wrong word under the
+  // biggest button on the screen.
+  renderLock (status, suffix) {
+    const w = this.state.widgets
+    const locked = status && status.lockState !== undefined
+      ? status.lockState === VEHICLE_LOCK_STATE.LOCKED
+      : true
+
+    w.heroUnlock.setProperty(prop.VISIBLE, locked)
+    w.heroLock.setProperty(prop.VISIBLE, !locked)
+    w.heroCaption.setProperty(prop.MORE, {
+      text: locked ? 'Unlock' : 'Lock',
+      color: COLOR.TEXT
+    })
+  },
+
+  // One line for the whole car, worst news first: anything standing open beats
+  // the lock state and contradicts it anyway.
+  renderSummary (status, suffix) {
+    const w = this.state.widgets
+    const controller = this.state.controller
+    if (!status) return
 
     for (const item of REPORTED) {
       const state = controller.closureState(item.field)
@@ -544,6 +717,24 @@ Page(BasePage({
       text: 'Car ' + lockStateName(status.lockState) + suffix,
       color: locked ? COLOR.SUCCESS : COLOR.MUTED
     })
+  },
+
+  // For a group, the least-shut wins, so one door ajar is not hidden behind
+  // three closed ones.
+  panelState (section) {
+    const controller = this.state.controller
+    if (section.field !== undefined) return controller.closureState(section.field)
+    if (!section.group) return undefined
+
+    let worst
+    for (const field of section.group) {
+      const state = controller.closureState(field)
+      if (state === undefined) continue
+      if (worst === undefined || (worst === CLOSURE_STATE.CLOSED && state !== CLOSURE_STATE.CLOSED)) {
+        worst = state
+      }
+    }
+    return worst
   },
 
   onDestroy () {
